@@ -46,12 +46,12 @@ RUN apt-get update \
             -o /tmp/cmdline-tools.zip \
             https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip || true; \
         if [ -s /tmp/cmdline-tools.zip ] \
-            && echo 'f1d671b868cf366b48c67830e13d480db6c249a7dd9b750f0a55b99d24fb1b2b  /tmp/cmdline-tools.zip' | sha256sum -c -; then \
+            && echo '2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258  /tmp/cmdline-tools.zip' | sha256sum -c -; then \
             verified=1; break; \
         elif [ -s /tmp/cmdline-tools.zip ]; then \
             actual=$(sha256sum /tmp/cmdline-tools.zip | cut -d ' ' -f 1); \
             size=$(wc -c < /tmp/cmdline-tools.zip); \
-            echo "Android SDK tools archive checksum mismatch on attempt ${attempt}/3 (expected f1d671b868cf366b48c67830e13d480db6c249a7dd9b750f0a55b99d24fb1b2b, got ${actual}, ${size} bytes)." >&2; \
+            echo "Android SDK tools archive checksum mismatch on attempt ${attempt}/3 (expected 2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258, got ${actual}, ${size} bytes)." >&2; \
         else \
             echo "Android SDK tools download failed on attempt ${attempt}/3; no archive was received from dl.google.com." >&2; \
         fi; \
