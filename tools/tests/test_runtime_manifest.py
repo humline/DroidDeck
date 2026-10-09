@@ -75,6 +75,32 @@ class RuntimeManifestTest(unittest.TestCase):
                     "e567b148a9fc4cacaca2783ff12e2baa9b03e6520be305f8d54edc10455f1e3e",
                 )
 
+    def test_fallback_requires_the_pinned_developer_release_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = os.path.join(temporary, "runtime.tar.zst")
+            inventory = os.path.join(temporary, "inventory.json")
+            with open(archive, "wb") as output:
+                output.write(b"runtime-archive")
+            with open(inventory, "w", encoding="utf-8") as output:
+                json.dump({
+                    "packages": [{"name": "sample", "version": "1.0-1"}],
+                    "files": [
+                        {"path": "usr/lib/libvulkan_freedreno.so", "type": "file", "sha256": "a" * 64},
+                    ],
+                }, output)
+            with self.assertRaisesRegex(ValueError, "does not match the pinned developer release"):
+                MANIFEST.create_outputs(
+                    archive,
+                    inventory,
+                    "0e1a71016d7f1b986bfdc31a7be432b56b7f22fd",
+                    "developer-release-fallback",
+                    "93d2ea6927841b042230ed3f841cfc32572a67d9",
+                    "9ce7a2ef35ae1ab06e024860a0f247962ab11b95",
+                    "b" * 64,
+                    "https://example.invalid/turnip.zip",
+                    "e567b148a9fc4cacaca2783ff12e2baa9b03e6520be305f8d54edc10455f1e3e",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
