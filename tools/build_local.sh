@@ -14,7 +14,18 @@ fi
 host_sdk_dir=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"${HOME}/Library/Android/sdk"}}
 java_dir=${JAVA_HOME:-"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"}
 image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v5}
-container_engine=${DROIDDECK_CONTAINER_ENGINE:-docker}
+container_engine=${DROIDDECK_CONTAINER_ENGINE:-nerdctl}
+case "${container_engine}" in
+    nerdctl|docker) ;;
+    *)
+        echo "DROIDDECK_CONTAINER_ENGINE must be nerdctl or docker." >&2
+        exit 1
+        ;;
+esac
+if ! command -v "${container_engine}" >/dev/null 2>&1; then
+    echo "${container_engine} is required to build DroidDeck." >&2
+    exit 1
+fi
 sdk_in_container=0
 if [[ "${container_engine}" == nerdctl ]]; then
     sdk_dir=/opt/android-sdk
@@ -35,10 +46,6 @@ if [[ "${sdk_in_container}" == 0 && ! -x "${sdk_dir}/platform-tools/adb" ]]; the
 fi
 if [[ "${container_engine}" != nerdctl && ! -x "${java_dir}/bin/java" ]]; then
     echo "Java 17 not found at ${java_dir}; set JAVA_HOME." >&2
-    exit 1
-fi
-if ! command -v "${container_engine}" >/dev/null 2>&1; then
-    echo "${container_engine} is required to cross-compile the glibc ARM64 preload libraries." >&2
     exit 1
 fi
 for tool in curl tar zstd shasum unzip; do
