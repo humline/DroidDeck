@@ -15,6 +15,7 @@ RUN apt-get update \
         ca-certificates \
         cmake \
         curl \
+        libexpat1-dev \
         flex \
         gcc-aarch64-linux-gnu \
         g++-aarch64-linux-gnu \
