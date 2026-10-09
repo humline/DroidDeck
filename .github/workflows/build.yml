@@ -33,6 +33,7 @@ env:
 jobs:
   linuxfs-runtime:
     name: Build Linux runtime archive
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
