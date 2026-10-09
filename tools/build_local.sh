@@ -108,7 +108,9 @@ run_build_image() {
 }
 run_build_image bash -lc '
     set -euo pipefail
-    for tool in curl tar zstd sha256sum unzip python3 git jq readelf gradle; do
+    for tool in bash curl tar zstd sha256sum unzip python3 git jq readelf gradle \
+            gcc g++ make patch meson ninja glslangValidator \
+            aarch64-linux-gnu-gcc aarch64-linux-gnu-g++ aarch64-linux-gnu-readelf; do
         command -v "$tool" >/dev/null || {
             echo "Build image is missing required tool: $tool" >&2
             exit 1
@@ -224,7 +226,7 @@ if [[ -f "${repo_root}/tools/gamescope/release.env" ]]; then
     . "${repo_root}/tools/gamescope/release.env"
     gamescope_archive=$(cached "${GAMESCOPE_SHA256}" gamescope.tzst \
         bash -c 'curl -fsSL --retry 3 -o "$out" "https://github.com/$1/releases/download/$2/$3"' \
-        "${GAMESCOPE_REPO}" "${GAMESCOPE_TAG}" gamescope.tzst)
+        _ "${GAMESCOPE_REPO}" "${GAMESCOPE_TAG}" gamescope.tzst)
     run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${gamescope_archive}" "${linuxfs_dir}"
     test -f "${linuxfs_dir}/usr/local/bin/gamescope"
 fi
@@ -233,7 +235,7 @@ if [[ -f "${repo_root}/tools/wlroots/release.env" ]]; then
     . "${repo_root}/tools/wlroots/release.env"
     wlroots_archive=$(cached "${WLROOTS_SHA256}" wlroots.tzst \
         bash -c 'curl -fsSL --retry 3 -o "$out" "https://github.com/$1/releases/download/$2/$3"' \
-        "${WLROOTS_REPO}" "${WLROOTS_TAG}" wlroots.tzst)
+        _ "${WLROOTS_REPO}" "${WLROOTS_TAG}" wlroots.tzst)
     run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${wlroots_archive}" "${linuxfs_dir}"
     test -f "${linuxfs_dir}/usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so"
 fi
@@ -248,7 +250,7 @@ if [[ -f "${repo_root}/tools/droiddeck-esync/release.env" ]]; then
     . "${repo_root}/tools/droiddeck-esync/release.env"
     sync_archive=$(cached "${SYNC_BUNDLE_SHA256}" "${SYNC_BUNDLE_ASSET}" \
         bash -c 'curl -fsSL --retry 3 -o "$out" "https://github.com/$1/releases/download/$2/$3"' \
-        "${SYNC_BUNDLE_REPO}" "${SYNC_BUNDLE_TAG}" "${SYNC_BUNDLE_ASSET}")
+        _ "${SYNC_BUNDLE_REPO}" "${SYNC_BUNDLE_TAG}" "${SYNC_BUNDLE_ASSET}")
     sync_assets_stage="${staging_dir}/droiddeck-esync.new"
     mkdir -p "${sync_assets_stage}"
     run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${sync_archive}" "${sync_assets_stage}"
@@ -311,6 +313,10 @@ if [[ -z "${DROIDDECK_PA13_SOURCE_DIR:-}" ]]; then
         tar -xzf "$archive" -C "$2" --strip-components=1
     ' _ "${pa_tarball}" "${pa_source}"
 else
+    if [[ ! -d "${pa_source}" ]]; then
+        echo "PulseAudio source directory does not exist: ${pa_source}" >&2
+        exit 1
+    fi
     pa_source=$(cd "${pa_source}" && pwd)
 fi
 if [[ ! -f "${pa_source}/src/pulse/version.h.in" ]]; then

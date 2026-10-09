@@ -40,11 +40,25 @@ RUN apt-get update \
         'pyyaml==6.0.2' \
         'packaging==24.2' \
     && mkdir -p "${ANDROID_HOME}/cmdline-tools" /tmp/android-cmdline-tools \
-    && curl -fsSL --retry 3 \
-        -o /tmp/android-commandlinetools.zip \
-        https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
-    && echo 'f1d671b868cf366b48c67830e13d480db6c249a7dd9b750f0a55b99d24fb1b2b  /tmp/android-commandlinetools.zip' | sha256sum -c - \
-    && unzip -q /tmp/android-commandlinetools.zip -d /tmp/android-cmdline-tools \
+    && (verified=0; for attempt in 1 2 3; do \
+        rm -f /tmp/cmdline-tools.zip; \
+        curl -fsSL --retry 3 --retry-all-errors \
+            -o /tmp/cmdline-tools.zip \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip || true; \
+        if [ -s /tmp/cmdline-tools.zip ] \
+            && echo 'f1d671b868cf366b48c67830e13d480db6c249a7dd9b750f0a55b99d24fb1b2b  /tmp/cmdline-tools.zip' | sha256sum -c -; then \
+            verified=1; break; \
+        elif [ -s /tmp/cmdline-tools.zip ]; then \
+            actual=$(sha256sum /tmp/cmdline-tools.zip | cut -d ' ' -f 1); \
+            size=$(wc -c < /tmp/cmdline-tools.zip); \
+            echo "Android SDK tools archive checksum mismatch on attempt ${attempt}/3 (expected f1d671b868cf366b48c67830e13d480db6c249a7dd9b750f0a55b99d24fb1b2b, got ${actual}, ${size} bytes)." >&2; \
+        else \
+            echo "Android SDK tools download failed on attempt ${attempt}/3; no archive was received from dl.google.com." >&2; \
+        fi; \
+        sleep "${attempt}"; \
+    done; test "${verified}" = 1) \
+    && unzip -tq /tmp/cmdline-tools.zip \
+    && unzip -q /tmp/cmdline-tools.zip -d /tmp/android-cmdline-tools \
     && mv /tmp/android-cmdline-tools/cmdline-tools "${ANDROID_HOME}/cmdline-tools/latest" \
     && yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null \
     && "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
@@ -53,7 +67,7 @@ RUN apt-get update \
         "build-tools;34.0.0" \
         "cmake;3.22.1" \
         "ndk;27.3.13750724" \
-    && rm -rf /tmp/android-cmdline-tools /tmp/android-commandlinetools.zip /var/lib/apt/lists/* \
+    && rm -rf /tmp/android-cmdline-tools /tmp/cmdline-tools.zip /var/lib/apt/lists/* \
     && mkdir -p /src
 
 ENV PATH="/opt/turnip-venv/bin:${PATH}"
