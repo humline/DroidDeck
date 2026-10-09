@@ -54,12 +54,6 @@ for tool in curl tar zstd shasum unzip; do
         exit 1
     fi
 done
-if [[ -f "${repo_root}/tools/gamescope/release.env" || -f "${repo_root}/tools/wlroots/release.env" \
-        || -f "${repo_root}/tools/droiddeck-esync/release.env" ]] && ! command -v gh >/dev/null 2>&1; then
-    echo "GitHub CLI is required to download the pinned Gamescope, wlroots and droiddeck-esync release assets." >&2
-    exit 1
-fi
-
 ndk_version=${DROIDDECK_NDK_VERSION:-}
 if [[ -z "${ndk_version}" && "${sdk_in_container}" == 1 ]]; then
     ndk_version=27.3.13750724
@@ -235,6 +229,10 @@ cached() {
     mv "${out}.part" "${out}"
     echo "${out}"
 }
+download_release_asset() {
+    curl -fsSL --retry 3 -o "${out}" \
+        "https://github.com/$1/releases/download/$2/$3"
+}
 
 # The runtime archive and Turnip driver are built locally in the same container image as the
 # native preload libraries, then staged as Gradle assets. Persist sources, package downloads and
@@ -250,7 +248,7 @@ mkdir -p "${runtime_cache}"
 if [[ -f "${repo_root}/tools/gamescope/release.env" ]]; then
     . "${repo_root}/tools/gamescope/release.env"
     gamescope_archive=$(cached "${GAMESCOPE_SHA256}" gamescope.tzst \
-        bash -c 'gh release download "$0" -R "$1" -p gamescope.tzst -O "$out"' "${GAMESCOPE_TAG}" "${GAMESCOPE_REPO:-${github_repo}}")
+        download_release_asset "${GAMESCOPE_REPO:-${github_repo}}" "${GAMESCOPE_TAG}" gamescope.tzst)
     zstd -dc "${gamescope_archive}" | tar -xf - -C "${linuxfs_dir}"
     test -f "${linuxfs_dir}/usr/local/bin/gamescope"
 fi
@@ -258,7 +256,7 @@ fi
 if [[ -f "${repo_root}/tools/wlroots/release.env" ]]; then
     . "${repo_root}/tools/wlroots/release.env"
     wlroots_archive=$(cached "${WLROOTS_SHA256}" wlroots.tzst \
-        bash -c 'gh release download "$0" -R "$1" -p wlroots.tzst -O "$out"' "${WLROOTS_TAG}" "${github_repo}")
+        download_release_asset "${github_repo}" "${WLROOTS_TAG}" wlroots.tzst)
     zstd -dc "${wlroots_archive}" | tar -xf - -C "${linuxfs_dir}"
     test -f "${linuxfs_dir}/usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so"
 fi
@@ -273,14 +271,15 @@ sync_assets="${repo_root}/app/src/main/assets/droiddeck-esync"
 if [[ -f "${repo_root}/tools/droiddeck-esync/release.env" ]]; then
     . "${repo_root}/tools/droiddeck-esync/release.env"
     sync_archive=$(cached "${SYNC_BUNDLE_SHA256}" "${SYNC_BUNDLE_ASSET}" \
-        bash -c 'gh release download "$0" -R "$2" -p "$1" -O "$out"' "${SYNC_BUNDLE_TAG}" "${SYNC_BUNDLE_ASSET}" "${SYNC_BUNDLE_REPO}")
+        download_release_asset "${SYNC_BUNDLE_REPO}" "${SYNC_BUNDLE_TAG}" "${SYNC_BUNDLE_ASSET}")
     rm -rf "${sync_assets}"
     mkdir -p "${sync_assets}"
     zstd -dc "${sync_archive}" | tar -xf - -C "${sync_assets}"
     test -f "${sync_assets}/index.json"
     test -f "${sync_assets}/index.json.sig"
     sync_index=$(mktemp)
-    gh release download "${SYNC_BUNDLE_TAG}" -R "${SYNC_BUNDLE_REPO}" -p index.json -O "${sync_index}" --clobber
+    curl -fsSL --retry 3 -o "${sync_index}" \
+        "https://github.com/${SYNC_BUNDLE_REPO}/releases/download/${SYNC_BUNDLE_TAG}/index.json"
     revoked=$(python3 -c 'import json, sys; print(" ".join(p["id"] for p in json.load(open(sys.argv[1]))["packs"] if p.get("revoked") is True))' "${sync_index}")
     for id in ${revoked}; do
         if [[ -e "${sync_assets}/packs/${id}.tzst" ]]; then
