@@ -56,8 +56,8 @@ def package_inventory(root):
     return packages
 
 
-def likely_sensitive(path):
-    if path in PUBLIC_SYSTEM_TRUSTSTORES:
+def likely_sensitive(path, regular_file=False):
+    if regular_file and path in PUBLIC_SYSTEM_TRUSTSTORES:
         return False
     name = path.lower()
     return (
@@ -96,7 +96,7 @@ def file_inventory(root):
             else:
                 entry = {"path": relative, "type": "special", "mode": oct(mode)}
             entries.append(entry)
-            if likely_sensitive("/" + relative):
+            if likely_sensitive("/" + relative, regular_file=stat.S_ISREG(info.st_mode)):
                 sensitive.append(relative)
     if sensitive:
         raise SystemExit("Potential private/user data included in runtime: " + ", ".join(sensitive[:20]))
