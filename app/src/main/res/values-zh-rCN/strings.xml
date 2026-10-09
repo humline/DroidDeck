@@ -1261,7 +1261,7 @@
     <string name="session_proton_downloading_mb">正在下载 Proton Experimental（ARM64）· %1$d / %2$d MB</string>
     <string name="session_proton_checking">正在检查 Proton Experimental（ARM64）</string>
     <string name="session_proton_unpacking">正在解包 Proton Experimental（ARM64）</string>
-    <string name="session_runtime_catalog_unreachable">无法连接运行时目录。请检查网络连接，然后再次点“游玩”。</string>
+    <string name="session_runtime_catalog_unreachable">无法加载运行时信息。请检查网络连接或重新安装应用，然后再次点“游玩”。</string>
     <string name="session_runtime_install_failed">Linux 运行时未能安装。请在“配置”中检查运行时，然后再次点“游玩”。</string>
     <string name="session_desktop_catalog_unreachable">无法连接桌面目录。请检查网络连接，然后再次点“桌面”。</string>
 

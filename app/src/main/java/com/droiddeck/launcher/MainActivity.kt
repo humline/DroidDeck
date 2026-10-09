@@ -1648,7 +1648,7 @@ class MainActivity : ComponentActivity() {
 
     private fun checkCatalog() {
         val release = LinuxRuntimeInstaller.fetchRelease(this)
-        Log.i(TAG, "catalog: " + (release?.version ?: "unreachable"))
+        Log.i(TAG, "runtime: " + (release?.version ?: "unavailable"))
         ui.post { if (release != null) available = release }
     }
 

@@ -120,14 +120,14 @@ public final class LinuxRuntimeInstaller {
                     long size = json.optLong("size", 0L);
                     if (version.isEmpty() || !sha256.matches("(?i)[0-9a-f]{64}") || size <= 0L) {
                         Log.w(TAG, "bundled runtime manifest is missing valid version, SHA-256, or size");
-                        return fetchCatalogRelease();
+                        return null;
                     }
                     return new Release(version, BUNDLED_URL, sha256, size);
                 }
             }
         } catch (Exception e) {
             Log.w(TAG, "bundled runtime manifest: " + e);
-            return fetchCatalogRelease();
+            return null;
         }
         return fetchCatalogRelease();
     }
@@ -262,21 +262,27 @@ public final class LinuxRuntimeInstaller {
             boolean ok;
             if (BUNDLED_URL.equals(release.url)) {
                 if (listener != null) listener.onProgress(Step.DOWNLOADING, downloading, 0);
-                try (InputStream input = context.getAssets().open(BUNDLED_ARCHIVE);
-                     OutputStream output = new FileOutputStream(archive)) {
-                    byte[] buffer = new byte[1 << 16];
-                    long copied = 0L;
-                    long lastReport = 0L;
-                    for (int read = input.read(buffer); read != -1; read = input.read(buffer)) {
-                        output.write(buffer, 0, read);
-                        copied += read;
-                        if (listener != null && copied - lastReport > (1 << 20)) {
-                            lastReport = copied;
-                            listener.onProgress(Step.DOWNLOADING, downloading,
-                                    Math.min(100, Math.round(copied * 100f / release.size)));
+                try {
+                    try (InputStream input = context.getAssets().open(BUNDLED_ARCHIVE);
+                         OutputStream output = new FileOutputStream(archive)) {
+                        byte[] buffer = new byte[1 << 16];
+                        long copied = 0L;
+                        long lastReport = 0L;
+                        for (int read = input.read(buffer); read != -1; read = input.read(buffer)) {
+                            output.write(buffer, 0, read);
+                            copied += read;
+                            if (listener != null && copied - lastReport > (1 << 20)) {
+                                lastReport = copied;
+                                listener.onProgress(Step.DOWNLOADING, downloading,
+                                        Math.min(100, Math.round(copied * 100f / release.size)));
+                            }
                         }
+                        ok = archive.length() == release.size;
                     }
-                    ok = archive.length() == release.size;
+                } catch (IOException e) {
+                    Log.w(TAG, "bundled runtime copy failed", e);
+                    archive.delete();
+                    ok = false;
                 }
             } else {
                 if (listener != null) listener.onProgress(Step.DOWNLOADING, downloading, 0);

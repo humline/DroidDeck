@@ -47,6 +47,7 @@ jobs:
         id: runtime-lock
         run: |
           source tools/linuxfs/runtime-build.env
+          echo "linuxfs_builder_commit=$LINUXFS_BUILDER_COMMIT" >> "$GITHUB_OUTPUT"
           echo "turnip_builder_commit=$LINUXFS_TURNIP_BUILDER_COMMIT" >> "$GITHUB_OUTPUT"
           echo "turnip_mesa_commit=$LINUXFS_TURNIP_MESA_COMMIT" >> "$GITHUB_OUTPUT"
           echo "turnip_fallback_url=$LINUXFS_TURNIP_FALLBACK_URL" >> "$GITHUB_OUTPUT"
@@ -129,10 +130,12 @@ jobs:
           TURNIP_MESA_COMMIT: ${{ steps.runtime-lock.outputs.turnip_mesa_commit }}
           TURNIP_INPUT_SHA256: ${{ steps.turnip.outputs.zip_sha256 }}
           TURNIP_FALLBACK_SHA256: ${{ steps.runtime-lock.outputs.turnip_fallback_sha256 }}
+          LINUXFS_BUILDER_COMMIT: ${{ steps.runtime-lock.outputs.linuxfs_builder_commit }}
         run: |
           set -euo pipefail
           SOURCE_COMMIT=$(git -C upstream-linuxfs rev-parse HEAD)
-          [[ "$SOURCE_COMMIT" == 0e1a71016d7f1b986bfdc31a7be432b56b7f22fd ]]
+          [[ "$LINUXFS_BUILDER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_COMMIT" == "$LINUXFS_BUILDER_COMMIT" ]]
           [[ "$TURNIP_INPUT_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$TURNIP_BUILDER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           [[ "$TURNIP_MESA_COMMIT" =~ ^[0-9a-f]{40}$ ]]

@@ -5,7 +5,32 @@ import argparse
 import hashlib
 import json
 import os
+import posixpath
 import re
+
+
+def inventory_file_sha256(files, path):
+    entries = {entry["path"]: entry for entry in files}
+    visited = set()
+    current = path
+    while current not in visited:
+        visited.add(current)
+        entry = entries.get(current)
+        if not entry:
+            return None
+        if entry.get("type") == "file":
+            return entry.get("sha256")
+        if entry.get("type") != "symlink":
+            return None
+        target = entry.get("target", "")
+        if not isinstance(target, str) or not target:
+            return None
+        current = (
+            target.lstrip("/")
+            if target.startswith("/")
+            else posixpath.normpath(posixpath.join(posixpath.dirname(current), target))
+        )
+    return None
 
 
 def create_outputs(archive_path, inventory_path, source_commit, turnip_build_mode,
@@ -42,12 +67,11 @@ def create_outputs(archive_path, inventory_path, source_commit, turnip_build_mod
             digest.update(block)
             size += len(block)
     archive_sha256 = digest.hexdigest()
-    turnip_file = next(
-        (item for item in inventory["files"]
-         if item.get("path") == "usr/lib/libvulkan_freedreno.so" and item.get("type") == "file"),
-        None,
+    turnip_sha256 = inventory_file_sha256(
+        inventory["files"],
+        "usr/lib/libvulkan_freedreno.so",
     )
-    if not turnip_file or not turnip_file.get("sha256"):
+    if not turnip_sha256:
         raise ValueError("runtime inventory is missing the installed Turnip ICD hash")
     metadata = {
         "version": f"runtime-{archive_sha256[:16]}",
@@ -62,7 +86,7 @@ def create_outputs(archive_path, inventory_path, source_commit, turnip_build_mod
             "mesaRepository": "https://gitlab.freedesktop.org/mesa/mesa",
             "mesaCommit": turnip_mesa_commit,
             "inputZipSha256": turnip_input_sha256,
-            "installedIcdSha256": turnip_file["sha256"],
+            "installedIcdSha256": turnip_sha256,
             "fallbackRelease": {
                 "url": turnip_fallback_url,
                 "sha256": turnip_fallback_sha256,
