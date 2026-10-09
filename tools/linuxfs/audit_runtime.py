@@ -8,6 +8,11 @@ import stat
 import sys
 
 
+PUBLIC_SYSTEM_TRUSTSTORES = {
+    "/etc/ca-certificates/extracted/java-cacerts.jks",
+}
+
+
 def fields(path):
     result = {}
     current = None
@@ -52,7 +57,7 @@ def package_inventory(root):
 
 def likely_sensitive(path):
     name = path.lower()
-    if name == "/etc/ca-certificates/extracted/java-cacerts.jks":
+    if name in PUBLIC_SYSTEM_TRUSTSTORES:
         return False
     return (
         "/.ssh/" in name
