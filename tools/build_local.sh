@@ -11,10 +11,17 @@ if tree_status=$(git -C "${repo_root}" status --porcelain 2>/dev/null); then
 else
     export DROIDDECK_BUILD_TREE_STATE=unknown
 fi
-sdk_dir=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"${HOME}/Library/Android/sdk"}}
+host_sdk_dir=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"${HOME}/Library/Android/sdk"}}
 java_dir=${JAVA_HOME:-"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"}
-image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:24.04-v4}
+image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v5}
 container_engine=${DROIDDECK_CONTAINER_ENGINE:-docker}
+sdk_in_container=0
+if [[ "${container_engine}" == nerdctl ]]; then
+    sdk_dir=/opt/android-sdk
+    sdk_in_container=1
+else
+    sdk_dir=${host_sdk_dir}
+fi
 build_variant=${DROIDDECK_BUILD_VARIANT:-release}
 case "$build_variant" in
     debug) gradle_task=assembleDebug ;;
@@ -22,7 +29,7 @@ case "$build_variant" in
     *) echo "DROIDDECK_BUILD_VARIANT must be debug or release" >&2; exit 1 ;;
 esac
 
-if [[ ! -x "${sdk_dir}/platform-tools/adb" ]]; then
+if [[ "${sdk_in_container}" == 0 && ! -x "${sdk_dir}/platform-tools/adb" ]]; then
     echo "Android SDK not found at ${sdk_dir}; set ANDROID_HOME or ANDROID_SDK_ROOT." >&2
     exit 1
 fi
@@ -47,12 +54,19 @@ if [[ -f "${repo_root}/tools/gamescope/release.env" || -f "${repo_root}/tools/wl
 fi
 
 ndk_version=${DROIDDECK_NDK_VERSION:-}
+if [[ -z "${ndk_version}" && "${sdk_in_container}" == 1 ]]; then
+    ndk_version=27.3.13750724
+fi
+if [[ "${sdk_in_container}" == 1 && "${ndk_version}" != 27.3.13750724 ]]; then
+    echo "The nerdctl image contains NDK 27.3.13750724; rebuild the image to use another DROIDDECK_NDK_VERSION." >&2
+    exit 1
+fi
 if [[ -z "${ndk_version}" ]]; then
     # Only complete NDKs: an interrupted sdkmanager install leaves a directory without source.properties.
     ndk_path=$(find "${sdk_dir}/ndk" -mindepth 2 -maxdepth 2 -name source.properties -print | xargs -n1 dirname | sort -V | tail -1)
     ndk_version=${ndk_path##*/}
 fi
-if [[ -z "${ndk_version}" || ! -d "${sdk_dir}/ndk/${ndk_version}" ]]; then
+if [[ -z "${ndk_version}" || ( "${sdk_in_container}" == 0 && ! -d "${sdk_dir}/ndk/${ndk_version}" ) ]]; then
     echo "No Android NDK found under ${sdk_dir}/ndk; set DROIDDECK_NDK_VERSION." >&2
     exit 1
 fi
@@ -310,7 +324,20 @@ fi
 
 sink_output="${staging_dir}/sink-out"
 "${repo_root}/tools/directaudio/fetch.sh" "${repo_root}" "${sink_output}"
-"${repo_root}/tools/aaudio-sink/build.sh" "${pa_source}" "${sink_output}"
+if [[ "${container_engine}" == nerdctl ]]; then
+    pa_mount=()
+    if [[ "${pa_source}" != "${repo_root}"* && "${pa_source}" != "${staging_dir}"* ]]; then
+        pa_mount=(-v "${pa_source}:${pa_source}:ro")
+    fi
+    "${container_engine}" run --rm --platform linux/amd64 \
+        --user "$(id -u):$(id -g)" \
+        -v "${repo_root}:/src" -v "${staging_dir}:${staging_dir}" \
+        "${pa_mount[@]}" -w /src "${image_name}" \
+        env NDK="/opt/android-sdk/ndk/${ndk_version}" \
+        tools/aaudio-sink/build.sh "${pa_source}" "${sink_output}"
+else
+    "${repo_root}/tools/aaudio-sink/build.sh" "${pa_source}" "${sink_output}"
+fi
 # proot is rebuilt only when its sources (source.env, the patches, the build script) changed since
 # the libraries in jniLibs were built.
 proot_out="${repo_root}/app/src/main/jniLibs/arm64-v8a"
@@ -344,16 +371,18 @@ cd "${repo_root}"
 if [[ "${container_engine}" == nerdctl ]]; then
     gradle_cache="${HOME}/.gradle"
     mkdir -p "${gradle_cache}"
-    "${container_engine}" run --rm --platform linux/amd64 \
-        --user "$(id -u):$(id -g)" \
-        -e HOME=/tmp -e GRADLE_USER_HOME=/gradle \
-        -e JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
-        -e PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-        -e ANDROID_HOME="${sdk_dir}" -e ANDROID_SDK_ROOT="${sdk_dir}" \
-        -e NDK="${sdk_dir}/ndk/${ndk_version}" \
-        -v "${repo_root}:/src" -v "${sdk_dir}:${sdk_dir}:ro" \
-        -v "${gradle_cache}:/gradle" -w /src "${image_name}" \
-        ./gradlew "${gradle_task}" --console=plain -PndkVersion="${ndk_version}"
+    gradle_args=(
+        run --rm --platform linux/amd64
+        --user "$(id -u):$(id -g)"
+        -e HOME=/tmp -e GRADLE_USER_HOME=/gradle
+        -e ANDROID_HOME=/opt/android-sdk -e ANDROID_SDK_ROOT=/opt/android-sdk
+        -e NDK="/opt/android-sdk/ndk/${ndk_version}"
+        -v "${repo_root}:/src"
+        -v "${gradle_cache}:/gradle"
+        -w /src "${image_name}"
+        gradle "${gradle_task}" --console=plain -PndkVersion="${ndk_version}"
+    )
+    "${container_engine}" "${gradle_args[@]}"
 else
     ./gradlew "${gradle_task}" --console=plain -PndkVersion="${ndk_version}"
 fi
@@ -362,6 +391,7 @@ cp -p "${bundle_backup}" "${bundle_asset}"
 bundle_replaced=0
 
 apk="${repo_root}/app/build/outputs/apk/${build_variant}/app-${build_variant}.apk"
+apk_relative="app/build/outputs/apk/${build_variant}/app-${build_variant}.apk"
 audio_check="${staging_dir}/audio-check"
 mkdir -p "${audio_check}"
 unzip -p "${apk}" assets/pulseaudio.tzst | zstd -dc | tar -xf - -C "${audio_check}"
@@ -398,21 +428,36 @@ done
         echo "every NEEDED resolves"
     '
 
-build_tools=$(find "${sdk_dir}/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -1)
-if [[ ! -x "${build_tools}/zipalign" || ! -x "${build_tools}/apksigner" ]]; then
-    echo "Android build-tools with zipalign/apksigner are required under ${sdk_dir}/build-tools." >&2
+build_tools_version=34.0.0
+build_tools="${sdk_dir}/build-tools/${build_tools_version}"
+sdk_tool() {
+    local tool=$1
+    shift
+    if [[ "${container_engine}" == nerdctl ]]; then
+        "${container_engine}" run --rm --platform linux/amd64 \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp -v "${repo_root}:/src" -w /src "${image_name}" \
+            "/opt/android-sdk/build-tools/${build_tools_version}/${tool}" "$@"
+    else
+        "${build_tools}/${tool}" "$@"
+    fi
+}
+
+if [[ "${container_engine}" != nerdctl \
+        && ( ! -x "${build_tools}/zipalign" || ! -x "${build_tools}/apksigner" ) ]]; then
+    echo "Android build-tools 34.0.0 with zipalign/apksigner are required under ${sdk_dir}/build-tools." >&2
     exit 1
 fi
 
-"${build_tools}/zipalign" -p -f 4 "${apk}" "${apk}.aligned"
-"${build_tools}/apksigner" sign \
-    --ks "${repo_root}/keystore/testkey.p12" --ks-type PKCS12 --ks-pass pass:android \
+sdk_tool zipalign -p -f 4 "${apk_relative}" "${apk_relative}.aligned"
+sdk_tool apksigner sign \
+    --ks "keystore/testkey.p12" --ks-type PKCS12 --ks-pass pass:android \
     --ks-key-alias testkey --key-pass pass:android \
     --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
-    --out "${apk}" "${apk}.aligned"
+    --out "${apk_relative}" "${apk_relative}.aligned"
 rm -f "${apk}.aligned" "${apk}.idsig"
 
-signature_output=$("${build_tools}/apksigner" verify --min-sdk-version 21 --verbose --print-certs "${apk}")
+signature_output=$(sdk_tool apksigner verify --min-sdk-version 21 --verbose --print-certs "${apk_relative}")
 printf '%s\n' "${signature_output}"
 if ! unzip -l "${apk}" | grep -E 'META-INF/.*\.(SF|RSA|DSA)$' >/dev/null; then
     echo "APK signature check failed: JAR signature files are missing." >&2
@@ -445,13 +490,29 @@ if [[ -z "${signing_env}" ]]; then
 fi
 if [[ -n "${signing_env}" ]]; then
     echo "Signing with DroidDeck's key (${signing_env})"
-    (
-        set -a
-        # shellcheck disable=SC1090
-        . "${signing_env}"
-        set +a
-        BUILD_TOOLS="${build_tools}" "${repo_root}/tools/release/sign-apk.sh" "${apk}" standard "${apk}.release"
-    )
+    if [[ "${container_engine}" == nerdctl ]]; then
+        (
+            set -a
+            # shellcheck disable=SC1090
+            . "${signing_env}"
+            set +a
+            "${container_engine}" run --rm --platform linux/amd64 \
+                --user "$(id -u):$(id -g)" \
+                -e HOME=/tmp -e BUILD_TOOLS="/opt/android-sdk/build-tools/${build_tools_version}" \
+                -v "${repo_root}:/src" -v "${signing_env}:${signing_env}:ro" \
+                -v "${RELEASE_KEYSTORE}:${RELEASE_KEYSTORE}:ro" -w /src "${image_name}" \
+                bash -lc 'set -a; . "$1"; set +a; tools/release/sign-apk.sh "$2" standard "$3"' \
+                bash "${signing_env}" "${apk_relative}" "${apk_relative}.release"
+        )
+    else
+        (
+            set -a
+            # shellcheck disable=SC1090
+            . "${signing_env}"
+            set +a
+            BUILD_TOOLS="${build_tools}" "${repo_root}/tools/release/sign-apk.sh" "${apk}" standard "${apk}.release"
+        )
+    fi
     mv "${apk}.release" "${apk}"
 fi
 
