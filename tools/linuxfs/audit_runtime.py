@@ -56,9 +56,9 @@ def package_inventory(root):
 
 
 def likely_sensitive(path):
-    name = path.lower()
-    if name in PUBLIC_SYSTEM_TRUSTSTORES:
+    if path in PUBLIC_SYSTEM_TRUSTSTORES:
         return False
+    name = path.lower()
     return (
         "/.ssh/" in name
         or name.endswith("/authorized_keys")
