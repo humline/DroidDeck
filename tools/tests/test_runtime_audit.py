@@ -53,6 +53,31 @@ class RuntimeAuditTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "Potential private/user data"):
                 AUDIT.file_inventory(root)
 
+    def test_inventory_allows_generated_system_ca_truststore(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            truststore = os.path.join(
+                root, "etc", "ca-certificates", "extracted", "java-cacerts.jks"
+            )
+            os.makedirs(os.path.dirname(truststore))
+            with open(truststore, "wb") as output:
+                output.write(b"generated public CA truststore")
+            files = AUDIT.file_inventory(root)
+        self.assertIn(
+            "etc/ca-certificates/extracted/java-cacerts.jks",
+            [item["path"] for item in files],
+        )
+
+    def test_inventory_still_rejects_user_keystores(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            key = os.path.join(root, "home", "user", "private.jks")
+            os.makedirs(os.path.dirname(key))
+            with open(key, "wb") as output:
+                output.write(b"not a real private keystore")
+            with self.assertRaisesRegex(SystemExit, "Potential private/user data"):
+                AUDIT.file_inventory(root)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -52,6 +52,8 @@ def package_inventory(root):
 
 def likely_sensitive(path):
     name = path.lower()
+    if name == "/etc/ca-certificates/extracted/java-cacerts.jks":
+        return False
     return (
         "/.ssh/" in name
         or name.endswith("/authorized_keys")
