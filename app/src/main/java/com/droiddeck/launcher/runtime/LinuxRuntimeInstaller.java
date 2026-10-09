@@ -17,6 +17,7 @@ import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStre
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -42,6 +43,9 @@ public final class LinuxRuntimeInstaller {
     /** Catalog row, beside the other component catalogs in winlator-contents. */
     public static final String CATALOG_URL =
             "https://raw.githubusercontent.com/The412Banner/winlator-contents/main/linuxfs.json";
+    private static final String BUNDLED_ARCHIVE = "linuxfs-runtime.tar.zst";
+    private static final String BUNDLED_URL = "asset:" + BUNDLED_ARCHIVE;
+    private static final String BUNDLED_MANIFEST = "linuxfs-runtime.json";
 
     private static final String VERSION_FILE = ".version";
 
@@ -102,8 +106,33 @@ public final class LinuxRuntimeInstaller {
         return v == null ? null : v.trim();
     }
 
-    /** The catalog's current build, or null when it cannot be reached or read. */
-    public static Release fetchRelease() {
+    /** The APK-bundled build, or the online catalog for local builds without a bundled runtime. */
+    public static Release fetchRelease(Context context) {
+        try {
+            for (String asset : context.getAssets().list("")) {
+                if (!BUNDLED_MANIFEST.equals(asset)) continue;
+                try (InputStream input = context.getAssets().open(BUNDLED_MANIFEST)) {
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                    FileUtils.copy(input, bytes);
+                    JSONObject json = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+                    String version = json.optString("version", "");
+                    String sha256 = json.optString("sha256", "");
+                    long size = json.optLong("size", 0L);
+                    if (version.isEmpty() || !sha256.matches("(?i)[0-9a-f]{64}") || size <= 0L) {
+                        Log.w(TAG, "bundled runtime manifest is missing valid version, SHA-256, or size");
+                        return null;
+                    }
+                    return new Release(version, BUNDLED_URL, sha256, size);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "bundled runtime manifest: " + e);
+            return null;
+        }
+        return fetchCatalogRelease();
+    }
+
+    private static Release fetchCatalogRelease() {
         String body = Downloader.downloadString(CATALOG_URL);
         if (body == null || body.isEmpty()) return null;
         try {
@@ -229,23 +258,52 @@ public final class LinuxRuntimeInstaller {
             if (pendingRemoval.exists() && listener != null) listener.onProgress(context.getString(R.string.rtinst_removing_leftovers), -1);
             RuntimeFileTree.delete(pendingRemoval, null);
             String downloading = context.getString(R.string.rtinst_downloading);
-            if (listener != null) listener.onProgress(Step.DOWNLOADING, downloading, 0);
             // Downloader reports a 0..1 fraction, or -1 while the total size is unknown.
-            boolean ok = Downloader.downloadFile(release.url, archive, true, (fraction) -> {
-                if (listener != null) {
-                    listener.onProgress(Step.DOWNLOADING, downloading,
-                            fraction < 0 ? -1 : Math.round(fraction * 100f));
+            boolean ok;
+            if (BUNDLED_URL.equals(release.url)) {
+                if (listener != null) listener.onProgress(Step.DOWNLOADING, downloading, 0);
+                try {
+                    try (InputStream input = context.getAssets().open(BUNDLED_ARCHIVE);
+                         OutputStream output = new FileOutputStream(archive)) {
+                        byte[] buffer = new byte[1 << 16];
+                        long copied = 0L;
+                        long lastReport = 0L;
+                        for (int read = input.read(buffer); read != -1; read = input.read(buffer)) {
+                            output.write(buffer, 0, read);
+                            copied += read;
+                            if (listener != null && copied - lastReport > (1 << 20)) {
+                                lastReport = copied;
+                                listener.onProgress(Step.DOWNLOADING, downloading,
+                                        Math.min(100, Math.round(copied * 100f / release.size)));
+                            }
+                        }
+                        ok = archive.length() == release.size;
+                    }
+                } catch (IOException e) {
+                    Log.w(TAG, "bundled runtime copy failed", e);
+                    archive.delete();
+                    ok = false;
                 }
-            });
+            } else {
+                if (listener != null) listener.onProgress(Step.DOWNLOADING, downloading, 0);
+                ok = Downloader.downloadFile(release.url, archive, true, (fraction) -> {
+                    if (listener != null) {
+                        listener.onProgress(Step.DOWNLOADING, downloading,
+                                fraction < 0 ? -1 : Math.round(fraction * 100f));
+                    }
+                });
+            }
             if (!ok) {
                 Log.w(TAG, "download failed");
                 return false;
             }
 
+            // Verify the same manifest checksum after copying the bundled asset or downloading it.
             if (listener != null) listener.onProgress(Step.VERIFYING, context.getString(R.string.rtinst_verifying), -1);
             String actual = Hashes.sha256(archive);
             if (!release.sha256.equalsIgnoreCase(actual)) {
                 Log.w(TAG, "checksum mismatch: wanted " + release.sha256 + ", got " + actual);
+                archive.delete();
                 return false;
             }
 

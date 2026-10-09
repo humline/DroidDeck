@@ -96,6 +96,7 @@ object AddedGameArt {
         if (!SessionPrefs.addedGamesArt(context)) return false
         var changed = false
         for (game in games) {
+            if (!SessionPrefs.addedGamesArt(context)) break
             if (local(game).portrait != null) continue
             val cache = cacheDir(context, game)
             val lookup = File(cache, "steam-appid")

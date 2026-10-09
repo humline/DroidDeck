@@ -157,6 +157,16 @@ android {
         }
     }
 
+    androidResources {
+        noCompress 'zst'
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir("$buildDir/generated/linuxfsRuntime")
+        }
+    }
+
     buildFeatures {
         compose true
         buildConfig true

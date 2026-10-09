@@ -299,7 +299,6 @@ class MainActivity : ComponentActivity() {
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedPath(r.data)?.let { path ->
             SessionPrefs.setAddedGamesDirs(this, addedGamesDirs + path)
             addedGamesDirs = SessionPrefs.addedGamesDirs(this)
-        addedGamesArt = SessionPrefs.addedGamesArt(this)
             refreshAddedGames()
             refresh()
         }
@@ -315,7 +314,8 @@ class MainActivity : ComponentActivity() {
         }
     }
     private var addedGamesDirs by mutableStateOf<List<String>>(emptyList())
-    private var addedGamesArt by mutableStateOf(true)
+    private var addedGamesArt by mutableStateOf(false)
+    private var emulatorArtwork by mutableStateOf(false)
     @Volatile private var artFetchRunning = false
     private var addedGames by mutableStateOf<List<com.droiddeck.launcher.ui.AddedGameRow>>(emptyList())
     private val pickRomsDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
@@ -1215,6 +1215,7 @@ class MainActivity : ComponentActivity() {
                 addedGamesDirs = if (mode == SessionService.MODE_STEAM) addedGamesDirs else null,
                 addedGames = if (mode == SessionService.MODE_STEAM) addedGames else emptyList(),
                 addedGamesArt = addedGamesArt,
+                emulatorArtwork = emulatorArtwork,
                 deckyInstalled = if (mode == SessionService.MODE_STEAM) decky.deckyInstalled else null,
                 deckyLatestRelease = if (mode == SessionService.MODE_STEAM) decky.deckyReleases.firstOrNull() else null,
                 deckyChecking = decky.deckyChecking, deckyStage = decky.deckyStage, deckyPercent = decky.deckyPercent,
@@ -1298,6 +1299,11 @@ class MainActivity : ComponentActivity() {
                 },
                 onPickAddedGamesDir = { pickAddedGamesDir.launch(InAppFilePicker.buildDirIntent(this, getString(R.string.main_pick_added_games), addedGamesDirs.lastOrNull())) },
                 onAddedGamesArt = { on -> SessionPrefs.setAddedGamesArt(this, on); addedGamesArt = on; if (on) refreshAddedGames() },
+                onEmulatorArtwork = { on ->
+                    SessionPrefs.setEmulatorArtwork(this, on)
+                    emulatorArtwork = on
+                    if (on) refresh()
+                },
                 onForgetAddedGamesDir = { dir -> SessionPrefs.setAddedGamesDirs(this, addedGamesDirs - dir); addedGamesDirs = SessionPrefs.addedGamesDirs(this); refreshAddedGames(); refresh() },
                 onAddedGameExe = { folder, path -> SessionPrefs.setAddedGameExe(this, folder, path); refreshAddedGames(); refresh() },
                 onPickAddedGameExe = { folder ->
@@ -1409,6 +1415,8 @@ class MainActivity : ComponentActivity() {
         steamController = SessionPrefs.steamController(this)
         runSteamAtStartup = SessionPrefs.runSteamAtStartup(this)
         addedGamesDirs = SessionPrefs.addedGamesDirs(this)
+        addedGamesArt = SessionPrefs.addedGamesArt(this)
+        emulatorArtwork = SessionPrefs.emulatorArtwork(this)
         hdrOn = SessionPrefs.hdr(this, mode)
         fpsLimit = SessionPrefs.fpsLimit(this, mode)
         upscaler = SessionPrefs.upscaler(this)
@@ -1522,7 +1530,8 @@ class MainActivity : ComponentActivity() {
             }
             // Box art for the games that have none, fetched after the list is up; the list is
             // rebuilt once if any was found.
-            if (!OfflineMode.enabled(this) && CoverArt.fetchMissing(this, emus.flatMap { it.games })) {
+            if (!OfflineMode.enabled(this) && SessionPrefs.emulatorArtwork(this) &&
+                CoverArt.fetchMissing(this, emus.flatMap { it.games })) {
                 val refreshed = Library.emulators(this) { id -> DesktopCatalog.installed(this, id) != null }
                 ui.post { emulatorList = refreshed }
             }
@@ -1638,8 +1647,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkCatalog() {
-        val release = LinuxRuntimeInstaller.fetchRelease()
-        Log.i(TAG, "catalog: " + (release?.version ?: "unreachable"))
+        val release = LinuxRuntimeInstaller.fetchRelease(this)
+        Log.i(TAG, "runtime: " + (release?.version ?: "unavailable"))
         ui.post { if (release != null) available = release }
     }
 

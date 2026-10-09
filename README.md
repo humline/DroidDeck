@@ -25,7 +25,13 @@ Join the [DroidDeck Discord](https://discord.gg/JRGAvawjsm) for help, Preview bu
 
 ## Build
 
-Run `tools/build_local.sh` with Docker, Java 17, the Android SDK/NDK, and `zstd` installed. It builds the ARM64 audio sinks from PulseAudio 13.0 and packages them into the APK at `app/build/outputs/apk/release/app-release.apk`. Set `DROIDDECK_PA13_SOURCE_DIR` to an existing PulseAudio 13.0 source directory to skip downloading it. To install the APK on an attached device, run `tools/deploy_local.sh`.
+Run `tools/build_nerdctl.sh` with nerdctl/BuildKit, Bash, and standard Unix file/text utilities. Android SDK/NDK, Java, Gradle, Python, download/archive tools and compilers are supplied by the build image; a host SDK or GitHub CLI is not required. `tools/build_local.sh` can also use Docker by setting `DROIDDECK_CONTAINER_ENGINE=docker`; both engines use the same image SDK.
+
+The script builds the image if it is missing; set `DROIDDECK_REBUILD_IMAGE=1` to rebuild it and pick up Dockerfile changes. The image is based on Gradle 8.10.2/JDK 17 and installs Google's pinned command-line tools after SHA-256 verification, accepts SDK licenses, and installs platform 34, build-tools 34.0.0, CMake 3.22.1, and NDK 27.3.13750724. It also contains cross compilers, QEMU/PRoot, and the pinned Turnip build toolchain.
+
+The build checks out pinned Banners-Turnip and winlator-contents revisions, compiles and verifies the Linux Turnip driver from pinned Mesa source (using a SHA-256-verified original developer release only if the source build fails), builds/audits the Linux runtime, stages its archive, manifest, package list and filesystem inventory under `app/build/generated/linuxfsRuntime`, and assembles/signs the APK. `tools/build_nerdctl.sh` copies the result to `DroidDeck-release.apk` in the project root. Runtime sources/build intermediates are cached under `~/.cache/droiddeck-build` by default; override this with `DROIDDECK_BUILD_CACHE`. Set `DROIDDECK_BUILD_VARIANT=debug` for a debug APK. GitHub Actions no longer builds or transfers the runtime archive; APKs built there without generated runtime assets continue to use the runtime catalog at install time.
+
+The runtime's base rootfs and dependency closure remain official Arch Linux ARM, Debian, and Ubuntu binary packages rather than being rebuilt package-by-package from source. The package inventory records versions, licenses, project URLs and installed file hashes. The upstream builders still download the Arch base image and live package repositories over HTTP without pinned digests or signature verification, so these inputs are not independently authenticated or reproducible; an inventory is not a malware verdict. The runtime is roughly 600–800 MB compressed, substantially increasing the APK size. Set `DROIDDECK_PA13_SOURCE_DIR` to existing PulseAudio 13.0 sources to skip fetching them. To install an APK on an attached device, run `tools/deploy_local.sh`.
 
 ## Limits
 

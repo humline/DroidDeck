@@ -1283,7 +1283,7 @@
     <string name="session_proton_downloading_mb">descargando Proton Experimental (ARM64) · %1$d de %2$d MB</string>
     <string name="session_proton_checking">comprobando Proton Experimental (ARM64)</string>
     <string name="session_proton_unpacking">descomprimiendo Proton Experimental (ARM64)</string>
-    <string name="session_runtime_catalog_unreachable">No se pudo acceder al catálogo del runtime. Revisa la conexión y vuelve a pulsar Jugar.</string>
+    <string name="session_runtime_catalog_unreachable">No se pudo cargar la información del runtime. Revisa la conexión o reinstala la aplicación y vuelve a pulsar Jugar.</string>
     <string name="session_runtime_install_failed">El runtime de Linux no se instaló. Revisa el runtime en Configuración y vuelve a pulsar Jugar.</string>
     <string name="session_desktop_catalog_unreachable">No se pudo acceder al catálogo del escritorio. Revisa la conexión y pulsa Escritorio de nuevo.</string>
 
