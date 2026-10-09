@@ -8,6 +8,7 @@ import stat
 import sys
 
 
+# Arch generates this public CA truststore; entries are root-relative paths.
 PUBLIC_SYSTEM_TRUSTSTORES = {
     "/etc/ca-certificates/extracted/java-cacerts.jks",
 }
