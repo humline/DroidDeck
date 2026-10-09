@@ -88,7 +88,7 @@ def file_inventory(root):
             else:
                 entry = {"path": relative, "type": "special", "mode": oct(mode)}
             entries.append(entry)
-            if likely_sensitive(relative):
+            if likely_sensitive("/" + relative):
                 sensitive.append(relative)
     if sensitive:
         raise SystemExit("Potential private/user data included in runtime: " + ", ".join(sensitive[:20]))

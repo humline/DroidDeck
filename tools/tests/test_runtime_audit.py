@@ -44,6 +44,15 @@ class RuntimeAuditTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "Potential private/user data"):
                 AUDIT.file_inventory(root)
 
+    def test_inventory_rejects_top_level_authorized_keys(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            key = os.path.join(root, "authorized_keys")
+            with open(key, "w", encoding="utf-8") as output:
+                output.write("not a real key")
+            with self.assertRaisesRegex(SystemExit, "Potential private/user data"):
+                AUDIT.file_inventory(root)
+
 
 if __name__ == "__main__":
     unittest.main()

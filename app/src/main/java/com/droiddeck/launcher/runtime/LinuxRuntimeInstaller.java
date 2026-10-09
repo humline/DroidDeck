@@ -118,7 +118,10 @@ public final class LinuxRuntimeInstaller {
                     String version = json.optString("version", "");
                     String sha256 = json.optString("sha256", "");
                     long size = json.optLong("size", 0L);
-                    if (version.isEmpty() || !sha256.matches("(?i)[0-9a-f]{64}") || size <= 0L) return null;
+                    if (version.isEmpty() || !sha256.matches("(?i)[0-9a-f]{64}") || size <= 0L) {
+                        Log.w(TAG, "bundled runtime manifest is missing valid version, SHA-256, or size");
+                        return null;
+                    }
                     return new Release(version, BUNDLED_URL, sha256, size);
                 }
             }
