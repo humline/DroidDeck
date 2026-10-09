@@ -13,7 +13,8 @@ else
 fi
 sdk_dir=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"${HOME}/Library/Android/sdk"}}
 java_dir=${JAVA_HOME:-"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"}
-image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:24.04-v2}
+image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:24.04-v3}
+container_engine=${DROIDDECK_CONTAINER_ENGINE:-docker}
 build_variant=${DROIDDECK_BUILD_VARIANT:-release}
 case "$build_variant" in
     debug) gradle_task=assembleDebug ;;
@@ -25,12 +26,12 @@ if [[ ! -x "${sdk_dir}/platform-tools/adb" ]]; then
     echo "Android SDK not found at ${sdk_dir}; set ANDROID_HOME or ANDROID_SDK_ROOT." >&2
     exit 1
 fi
-if [[ ! -x "${java_dir}/bin/java" ]]; then
+if [[ "${container_engine}" != nerdctl && ! -x "${java_dir}/bin/java" ]]; then
     echo "Java 17 not found at ${java_dir}; set JAVA_HOME." >&2
     exit 1
 fi
-if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker is required to cross-compile the glibc ARM64 preload libraries." >&2
+if ! command -v "${container_engine}" >/dev/null 2>&1; then
+    echo "${container_engine} is required to cross-compile the glibc ARM64 preload libraries." >&2
     exit 1
 fi
 for tool in curl tar zstd shasum unzip; do
@@ -95,22 +96,19 @@ linuxfs_replaced=1
 rm -rf -- "${linuxfs_dir}"
 mkdir -p "${linuxfs_dir}"
 
-# Docker Desktop's VM restarts now and then, and until its engine has loaded its image store it
-# answers "No such image" for images it has. The rebuild that follows hangs on the registry
-# (the base image's credentials go through docker-credential-desktop), so give a restarting daemon
-# up to a minute before deciding the image is really missing.
+# Container engines may need a moment after startup before an image is inspectable.
 image_present=0
 for _ in $(seq 1 30); do
-    if inspect_error=$(docker image inspect "${image_name}" 2>&1 >/dev/null); then image_present=1; break; fi
+    if inspect_error=$("${container_engine}" image inspect "${image_name}" 2>&1 >/dev/null); then image_present=1; break; fi
     sleep 2
 done
 if [[ "${image_present}" = 0 ]]; then
     echo "Build image ${image_name} not found (${inspect_error:-no error}); building it." >&2
-    docker build --platform linux/amd64 -t "${image_name}" \
+    "${container_engine}" build --platform linux/amd64 -t "${image_name}" \
         -f "${repo_root}/tools/local-cross.Dockerfile" "${repo_root}"
 fi
 
-docker run --rm --platform linux/amd64 \
+"${container_engine}" run --rm --platform linux/amd64 \
     --user "$(id -u):$(id -g)" \
     -v "${repo_root}:/src" -w /src "${image_name}" bash -lc '
         set -euo pipefail
@@ -170,7 +168,7 @@ docker run --rm --platform linux/amd64 \
         test -f "$d/usr/local/bin/droiddeck-proton-extra"
     '
 
-docker run --rm --platform linux/amd64 \
+"${container_engine}" run --rm --platform linux/amd64 \
     -v "${repo_root}:/src" -w /src debian:bullseye bash -c '
         set -euo pipefail
         printf "deb http://archive.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian-security bullseye-security main\n" > /etc/apt/sources.list
@@ -277,7 +275,7 @@ for library in libfmt.so.10 libspdlog.so.1.13 libglfw.so.3 libtraceevent.so.1; d
     cp -L "${mango_pkgs}/usr/lib/${library}" "${mango_dir}/${library}"
 done
 # Ours, not the package's: GPU memory without tracefs (tools/mangoapp/libtracefs-shim.c).
-docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -v "${repo_root}:/src" -w /src "${image_name}" \
+"${container_engine}" run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -v "${repo_root}:/src" -w /src "${image_name}" \
     aarch64-linux-gnu-gcc -shared -fPIC -O2 -Wall -Wl,-soname,libtracefs.so.1 \
     -o app/src/main/assets/linuxfs/usr/local/lib/mangoapp/libtracefs.so.1 tools/mangoapp/libtracefs-shim.c
 mkdir -p "${linuxfs_dir}/usr/local/bin"
@@ -332,7 +330,22 @@ bundle_replaced=1
 mv "${staging_dir}/pulseaudio.tzst" "${bundle_asset}"
 
 cd "${repo_root}"
-./gradlew "${gradle_task}" --console=plain -PndkVersion="${ndk_version}"
+if [[ "${container_engine}" == nerdctl ]]; then
+    gradle_cache="${HOME}/.gradle"
+    mkdir -p "${gradle_cache}"
+    "${container_engine}" run --rm --platform linux/amd64 \
+        --user "$(id -u):$(id -g)" \
+        -e HOME=/tmp -e GRADLE_USER_HOME=/gradle \
+        -e JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+        -e PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        -e ANDROID_HOME="${sdk_dir}" -e ANDROID_SDK_ROOT="${sdk_dir}" \
+        -e NDK="${sdk_dir}/ndk/${ndk_version}" \
+        -v "${repo_root}:/src" -v "${sdk_dir}:${sdk_dir}:ro" \
+        -v "${gradle_cache}:/gradle" -w /src "${image_name}" \
+        ./gradlew "${gradle_task}" --console=plain -PndkVersion="${ndk_version}"
+else
+    ./gradlew "${gradle_task}" --console=plain -PndkVersion="${ndk_version}"
+fi
 python3 tools/release/check_session_assets.py "app/build/outputs/apk/${build_variant}/app-${build_variant}.apk"
 cp -p "${bundle_backup}" "${bundle_asset}"
 bundle_replaced=0
@@ -351,7 +364,7 @@ for audio_file in \
     fi
 done
 
-docker run --rm --platform linux/amd64 -e build_variant="${build_variant}" -v "${repo_root}:/src:ro" -w /src "${image_name}" \
+"${container_engine}" run --rm --platform linux/amd64 -e build_variant="${build_variant}" -v "${repo_root}:/src:ro" -w /src "${image_name}" \
     bash -lc '
         set -euo pipefail
         apk=app/build/outputs/apk/${build_variant}/app-${build_variant}.apk

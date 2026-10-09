@@ -8,6 +8,8 @@ RUN apt-get update \
         binutils-aarch64-linux-gnu \
         gcc-aarch64-linux-gnu \
         g++-aarch64-linux-gnu \
+        git \
+        openjdk-17-jdk-headless \
         unzip \
     && mkdir -p /src
 

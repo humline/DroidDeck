@@ -577,11 +577,18 @@ object SessionPrefs {
         prefs(context).edit().putString("addedGamesDirs", dirs.distinct().joinToString("\n")).remove("addedGamesDir").apply()
     }
 
-    /** Whether added games without art of their own get Steam's store art fetched for them. */
-    fun addedGamesArt(context: Context): Boolean = prefs(context).getBoolean("addedGamesArt", true)
+    /** Whether added-game folder names may be sent to Steam to look up missing artwork. */
+    fun addedGamesArt(context: Context): Boolean = prefs(context).getBoolean("addedGamesArt", false)
 
     fun setAddedGamesArt(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("addedGamesArt", on).apply()
+    }
+
+    /** Whether emulator ROM names and disc IDs may be sent to artwork providers. */
+    fun emulatorArtwork(context: Context): Boolean = prefs(context).getBoolean("emulatorArtwork", false)
+
+    fun setEmulatorArtwork(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("emulatorArtwork", on).apply()
     }
 
     /** The .exe the user chose for one game folder (by its path), "" = the scanner's pick. */

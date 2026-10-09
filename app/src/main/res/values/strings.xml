@@ -309,8 +309,10 @@
     <string name="mode_added_none">no game folders with a .exe found</string>
     <string name="mode_games_folder">Games folder</string>
     <string name="mode_games_folder_another">Another games folder</string>
-    <string name="mode_added_art">Artwork from Steam</string>
-    <string name="mode_added_art_hint">Fills in missing art by folder name. Your own cover.jpg, hero.jpg, logo.png or icon.png in the game folder takes priority.</string>
+    <string name="mode_added_art">Look up added-game artwork online</string>
+    <string name="mode_added_art_hint">When on, sends added-game folder names to Steam to find missing artwork. Local artwork and cached images still work when off.</string>
+    <string name="mode_emulator_art">Look up emulator artwork online</string>
+    <string name="mode_emulator_art_hint">When on, sends ROM filenames or disc IDs to artwork providers. Local artwork and cached images still work when off.</string>
     <string name="mode_added_launches">Launches %1$s</string>
     <string name="mode_added_launches_in">Launches %1$s · in %2$s</string>
     <string name="mode_added_choose">Choose another file…</string>

@@ -25,7 +25,7 @@ Join the [DroidDeck Discord](https://discord.gg/JRGAvawjsm) for help, Preview bu
 
 ## Build
 
-Run `tools/build_local.sh` with Docker, Java 17, the Android SDK/NDK, and `zstd` installed. It builds the ARM64 audio sinks from PulseAudio 13.0 and packages them into the APK at `app/build/outputs/apk/release/app-release.apk`. Set `DROIDDECK_PA13_SOURCE_DIR` to an existing PulseAudio 13.0 source directory to skip downloading it. To install the APK on an attached device, run `tools/deploy_local.sh`.
+Run `tools/build_local.sh` with Docker, Java 17, the Android SDK/NDK, and `zstd` installed. It builds the ARM64 audio sinks from PulseAudio 13.0 and packages them into the APK at `app/build/outputs/apk/release/app-release.apk`. Set `DROIDDECK_PA13_SOURCE_DIR` to an existing PulseAudio 13.0 source directory to skip downloading it. To build with nerdctl/BuildKit, run `tools/build_nerdctl.sh` with nerdctl, BuildKit, the Android SDK/NDK, and `zstd` installed; Gradle runs in the BuildKit-built container and copies the APK to `DroidDeck-release.apk` in the project root. Set `DROIDDECK_BUILD_VARIANT=debug` for a debug APK. To install the APK on an attached device, run `tools/deploy_local.sh`.
 
 ## Limits
 

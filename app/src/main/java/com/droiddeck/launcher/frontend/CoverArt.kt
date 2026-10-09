@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import com.droiddeck.launcher.session.SessionPrefs
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
@@ -65,9 +66,11 @@ object CoverArt {
      * at least one was found, so the caller rebuilds the list to show it.
      */
     fun fetchMissing(context: Context, roms: List<Library.Rom>): Boolean {
+        if (!SessionPrefs.emulatorArtwork(context)) return false
         var found = false
         var tries = 0
         for (rom in roms) {
+            if (!SessionPrefs.emulatorArtwork(context)) break
             if (!wanted(context, rom)) continue
             if (++tries > MAX_PER_PASS) break
             val target = coverFile(context, rom)
