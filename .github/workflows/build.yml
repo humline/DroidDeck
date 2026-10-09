@@ -31,11 +31,73 @@ env:
   PRELOAD_CACHE_VERSION: v3
 
 jobs:
+  linuxfs-runtime:
+    name: Build Linux runtime archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read pinned runtime sources
+        id: runtime-lock
+        run: |
+          source tools/linuxfs/runtime-build.env
+          echo "commit=$LINUXFS_SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "turnip_url=$LINUXFS_TURNIP_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned runtime builder
+        uses: actions/checkout@v4
+        with:
+          repository: The412Banner/winlator-contents
+          ref: ${{ steps.runtime-lock.outputs.commit }}
+          path: upstream-linuxfs
+          persist-credentials: false
+
+      - name: Install runtime build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends curl tar zstd binutils xz-utils unzip python3 proot qemu-user-static
+
+      - name: Build Linux runtime
+        env:
+          TURNIP_URL: ${{ steps.runtime-lock.outputs.turnip_url }}
+          SOURCE_COMMIT: ${{ steps.runtime-lock.outputs.commit }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          upstream-linuxfs/linuxfs/build-base.sh "$RUNNER_TEMP/linuxfs-work" "$PWD/out/linuxfs-runtime.tar.zst"
+          sha256=$(sha256sum out/linuxfs-runtime.tar.zst | cut -d' ' -f1)
+          size=$(stat -c %s out/linuxfs-runtime.tar.zst)
+          jq -n \
+            --arg version "runtime-${sha256:0:16}" \
+            --arg sourceCommit "$SOURCE_COMMIT" \
+            --arg turnipUrl "$TURNIP_URL" \
+            --arg sha256 "$sha256" \
+            --argjson size "$size" \
+            '{version:$version,sourceCommit:$sourceCommit,turnipUrl:$turnipUrl,sha256:$sha256,size:$size}' \
+            > out/linuxfs-runtime.json
+          test -s out/linuxfs-packages.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linuxfs-runtime
+          path: |
+            out/linuxfs-runtime.tar.zst
+            out/linuxfs-runtime.json
+            out/linuxfs-packages.txt
+          compression-level: 0
+          retention-days: 1
+
   build:
     name: Build APK
+    needs: linuxfs-runtime
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     outputs:
       variants: ${{ steps.variants.outputs.list }}
     steps:
@@ -167,6 +229,21 @@ jobs:
           echo "DROIDDECK_SOURCE_COMMIT=${PR_HEAD_SHA:-$BUILD_SHA}" >> "$GITHUB_ENV"
           echo "DROIDDECK_PR_NUMBER=${PR_NUMBER:-0}" >> "$GITHUB_ENV"
           echo "Build: \`$label\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Add the built runtime to APK assets
+        uses: actions/download-artifact@v4
+        with:
+          name: linuxfs-runtime
+          path: app/build/generated/linuxfsRuntime
+
+      - name: Verify staged runtime metadata
+        run: |
+          set -euo pipefail
+          cd app/build/generated/linuxfsRuntime
+          jq -e '(.sha256 | test("^[0-9a-f]{64}$")) and (.size > 0) and (.sourceCommit | test("^[0-9a-f]{40}$"))' linuxfs-runtime.json
+          echo "$(jq -r .sha256 linuxfs-runtime.json)  linuxfs-runtime.tar.zst" | sha256sum -c -
+          test "$(stat -c %s linuxfs-runtime.tar.zst)" = "$(jq -r .size linuxfs-runtime.json)"
+          test -s linuxfs-packages.txt
 
       - name: Cache the preloads
         id: preloads
