@@ -369,7 +369,7 @@ bundle_replaced=1
 mv "${staging_dir}/pulseaudio.tzst" "${bundle_asset}"
 
 cd "${repo_root}"
-gradle_cache="${HOME}/.gradle"
+gradle_cache="${cache_dir}/gradle"
 mkdir -p "${gradle_cache}"
 "${container_engine}" run --rm --platform linux/amd64 \
     --user "$(id -u):$(id -g)" \

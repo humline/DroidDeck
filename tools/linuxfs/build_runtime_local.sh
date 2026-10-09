@@ -53,15 +53,18 @@ mkdir -p "${turnip_build_dir}"
 rm -f "${turnip_build_dir}/linux_workdir/Turnip-DroidDeck-Linux.zip"
 
 echo "Building Linux Turnip from Mesa ${LINUXFS_TURNIP_MESA_COMMIT}..."
-if (
-    cd "${turnip_build_dir}" \
-        && export MESA_COMMIT="${LINUXFS_TURNIP_MESA_COMMIT}" \
-        && export ZIP_NAME=Turnip-DroidDeck-Linux.zip \
-        && export META_NAME="Mesa Turnip DroidDeck Linux" \
-        && export PACKAGE_VERSION=1 \
-        && export VARIANT=regular \
-        && "${turnip_repo}/build_turnip_linux.sh" \
-        && python3 "${turnip_repo}/.github/scripts/verify_driver_zip.py" \
+build_turnip_from_source() (
+    cd "${turnip_build_dir}" || exit 1
+    export MESA_COMMIT="${LINUXFS_TURNIP_MESA_COMMIT}"
+    export ZIP_NAME=Turnip-DroidDeck-Linux.zip
+    export META_NAME="Mesa Turnip DroidDeck Linux"
+    export PACKAGE_VERSION=1
+    export VARIANT=regular
+    if ! "${turnip_repo}/build_turnip_linux.sh"; then
+        echo "Turnip source build command failed." >&2
+        exit 1
+    fi
+    python3 "${turnip_repo}/.github/scripts/verify_driver_zip.py" \
         --kind linux \
         --zip "${turnip_build_dir}/linux_workdir/${ZIP_NAME}" \
         --variant regular \
@@ -69,7 +72,9 @@ if (
         --expect-package-version "${PACKAGE_VERSION}" \
         --build-report "${turnip_build_dir}/linux_workdir/build-report.json" \
         --report "${work_root}/turnip-build-verification.json"
-); then
+)
+
+if build_turnip_from_source; then
     install -m 644 "${turnip_build_dir}/linux_workdir/Turnip-DroidDeck-Linux.zip" "${turnip_zip}"
 else
     echo "Turnip source build/verification failed; trying the pinned developer release." >&2

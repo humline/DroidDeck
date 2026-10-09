@@ -298,10 +298,12 @@ public final class LinuxRuntimeInstaller {
                 return false;
             }
 
+            // Verify the same manifest checksum after copying the bundled asset or downloading it.
             if (listener != null) listener.onProgress(Step.VERIFYING, context.getString(R.string.rtinst_verifying), -1);
             String actual = Hashes.sha256(archive);
             if (!release.sha256.equalsIgnoreCase(actual)) {
                 Log.w(TAG, "checksum mismatch: wanted " + release.sha256 + ", got " + actual);
+                archive.delete();
                 return false;
             }
 
