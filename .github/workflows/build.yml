@@ -48,6 +48,8 @@ jobs:
           source tools/linuxfs/runtime-build.env
           echo "commit=$LINUXFS_SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
           echo "turnip_url=$LINUXFS_TURNIP_URL" >> "$GITHUB_OUTPUT"
+          echo "turnip_sha256=$LINUXFS_TURNIP_SHA256" >> "$GITHUB_OUTPUT"
+          echo "turnip_mesa_commit=$LINUXFS_TURNIP_MESA_COMMIT" >> "$GITHUB_OUTPUT"
 
       - name: Check out the pinned runtime builder
         uses: actions/checkout@v4
@@ -64,23 +66,53 @@ jobs:
 
       - name: Build Linux runtime
         env:
-          TURNIP_URL: ${{ steps.runtime-lock.outputs.turnip_url }}
+          TURNIP_SOURCE_URL: ${{ steps.runtime-lock.outputs.turnip_url }}
+          TURNIP_SHA256: ${{ steps.runtime-lock.outputs.turnip_sha256 }}
+          TURNIP_MESA_COMMIT: ${{ steps.runtime-lock.outputs.turnip_mesa_commit }}
           SOURCE_COMMIT: ${{ steps.runtime-lock.outputs.commit }}
         run: |
           set -euo pipefail
+          [[ "$TURNIP_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$TURNIP_MESA_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           mkdir -p out
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/turnip.zip" "$TURNIP_SOURCE_URL"
+          echo "$TURNIP_SHA256  $RUNNER_TEMP/turnip.zip" | sha256sum -c -
+          export TURNIP_URL="file://$RUNNER_TEMP/turnip.zip"
           upstream-linuxfs/linuxfs/build-base.sh "$RUNNER_TEMP/linuxfs-work" "$PWD/out/linuxfs-runtime.tar.zst"
+          python3 tools/linuxfs/audit_runtime.py "$RUNNER_TEMP/linuxfs-work/rootfs" out/linuxfs-runtime-inventory.json
           sha256=$(sha256sum out/linuxfs-runtime.tar.zst | cut -d' ' -f1)
           size=$(stat -c %s out/linuxfs-runtime.tar.zst)
           jq -n \
             --arg version "runtime-${sha256:0:16}" \
             --arg sourceCommit "$SOURCE_COMMIT" \
-            --arg turnipUrl "$TURNIP_URL" \
+            --arg turnipUrl "$TURNIP_SOURCE_URL" \
+            --arg turnipSha256 "$TURNIP_SHA256" \
+            --arg turnipMesaCommit "$TURNIP_MESA_COMMIT" \
             --arg sha256 "$sha256" \
             --argjson size "$size" \
-            '{version:$version,sourceCommit:$sourceCommit,turnipUrl:$turnipUrl,sha256:$sha256,size:$size}' \
+            --arg builder "The412Banner/winlator-contents" \
+            '{
+              version:$version,
+              builder:$builder,
+              sourceCommit:$sourceCommit,
+              sha256:$sha256,
+              size:$size,
+              turnip:{url:$turnipUrl,sha256:$turnipSha256,mesaCommit:$turnipMesaCommit},
+              archive:{sha256:$sha256,size:$size},
+              inputs:[
+                {name:"Arch Linux ARM base rootfs",url:"http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz",verification:"no pinned digest in upstream builder"},
+                {name:"Arch Linux ARM packages",url:"http://mirror.archlinuxarm.org/aarch64",verification:"live repository; packages selected by dependency closure"},
+                {name:"GTK2 Debian package",url:"http://deb.debian.org/debian/pool/main/g/gtk+2.0/libgtk2.0-0t64_2.24.33-7_arm64.deb",sha256:"28b2f1622197443f07f25a93e03db1a964184946ac12f501b8221c895026d0ca"},
+                {name:"Nettle Debian package",url:"https://deb.debian.org/debian/pool/main/n/nettle/libnettle8_3.8.1-2_arm64.deb",sha256:"c945ff210df69cf7b95e935b8fa936e81c1c1f475355e3d5db83510b174f0cd6"},
+                {name:"Theora Ubuntu package",url:"http://ports.ubuntu.com/ubuntu-ports/pool/main/libt/libtheora/libtheora0_1.1.1+dfsg.1-16.1build3_arm64.deb",sha256:"78ebaa1c851465dac9e13532623a4e41d28ed55f3df0353daf7c29d96a2e2b87"},
+                {name:"VPX Ubuntu package",url:"http://ports.ubuntu.com/ubuntu-ports/pool/main/libv/libvpx/libvpx9_1.14.0-1ubuntu2_arm64.deb",sha256:"809bf0d9435520793838a99072ca365ab23956def3583c3b8b4e253135d8e9f4"},
+                {name:"PRoot",source:"https://github.com/termux/proot/tree/v5.1.107.92",verification:"upstream builder copies prebuilt Termux binaries; its README documents this provenance"}
+              ],
+              turnipProject:"https://github.com/The412Banner/Banners-Turnip"
+            }' \
             > out/linuxfs-runtime.json
           test -s out/linuxfs-packages.txt
+          jq -e '.packageCount > 0 and .fileCount > 0' out/linuxfs-runtime-inventory.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -88,6 +120,7 @@ jobs:
           path: |
             out/linuxfs-runtime.tar.zst
             out/linuxfs-runtime.json
+            out/linuxfs-runtime-inventory.json
             out/linuxfs-packages.txt
           compression-level: 0
           retention-days: 1
@@ -241,6 +274,7 @@ jobs:
           set -euo pipefail
           cd app/build/generated/linuxfsRuntime
           jq -e '(.sha256 | test("^[0-9a-f]{64}$")) and (.size > 0) and (.sourceCommit | test("^[0-9a-f]{40}$"))' linuxfs-runtime.json
+          jq -e '.packageCount > 0 and .fileCount > 0' linuxfs-runtime-inventory.json
           echo "$(jq -r .sha256 linuxfs-runtime.json)  linuxfs-runtime.tar.zst" | sha256sum -c -
           test "$(stat -c %s linuxfs-runtime.tar.zst)" = "$(jq -r .size linuxfs-runtime.json)"
           test -s linuxfs-packages.txt
