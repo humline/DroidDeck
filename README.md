@@ -33,6 +33,14 @@ The build checks out pinned Banners-Turnip and winlator-contents revisions, comp
 
 The runtime's base rootfs and dependency closure remain official Arch Linux ARM, Debian, and Ubuntu binary packages rather than being rebuilt package-by-package from source. The package inventory records versions, licenses, project URLs and installed file hashes. The upstream builders still download the Arch base image and live package repositories over HTTP without pinned digests or signature verification, so these inputs are not independently authenticated or reproducible; an inventory is not a malware verdict. The runtime is roughly 600–800 MB compressed, substantially increasing the APK size. Set `DROIDDECK_PA13_SOURCE_DIR` to existing PulseAudio 13.0 sources to skip fetching them. To install an APK on an attached device, run `tools/deploy_local.sh`.
 
+### Build checks and diagnostics
+
+The local build verifies the Android command-line tools archive against a pinned SHA-256 before extracting it. Runtime inventory rejects paths that look like user credentials; the generated Arch Java CA truststore at `/etc/ca-certificates/extracted/java-cacerts.jks` is excluded from that check because it contains public trust anchors, not private user keys. Other keystores and SSH private-key paths remain flagged.
+
+Runtime trimming can leave files from packages that were removed. The build's library audit may therefore report unresolved shared libraries for such leftovers; these reports should be investigated if they affect files that are meant to be used, but are not by themselves proof of a broken runtime. Tar's “Ignoring unknown extended header keyword” messages concern archive metadata, and a `setlocale` warning means the requested locale is not installed in the build environment. These warnings do not alone indicate that the build failed. Check the final command status and the generated runtime manifest/archive checks when diagnosing a build.
+
+The package/file inventory and SHA-256 checks help identify build inputs and detect accidental changes, but do not establish that upstream binaries are free of malware. In particular, the Arch base image and live package repositories are not authenticated by pinned digests or signatures in this build pipeline.
+
 ## Limits
 
 Compatibility and performance vary by device; hardware validation is limited. Desktop compositing uses software rendering. Firefox sandboxing is reduced under proot. See the session logs in `Download/DroidDeck/` when diagnosing problems.
