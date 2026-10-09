@@ -107,7 +107,7 @@ class ModeSettings(
     /** Steam only: the user's chosen Games folders; null outside Steam. */
     val addedGamesDirs: List<String>? = null,
     val addedGames: List<AddedGameRow> = emptyList(),
-    val addedGamesArt: Boolean = true,
+    val addedGamesArt: Boolean = false,
     val emulatorArtwork: Boolean = false,
     /** Latest Banners-Turnip release: what each driver menu offers to download, and the refresh line. */
     /** Steam only: Decky Loader is managed from the Steam session settings. */

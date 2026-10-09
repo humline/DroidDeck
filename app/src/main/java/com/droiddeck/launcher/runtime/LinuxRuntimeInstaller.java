@@ -43,7 +43,8 @@ public final class LinuxRuntimeInstaller {
     /** Catalog row, beside the other component catalogs in winlator-contents. */
     public static final String CATALOG_URL =
             "https://raw.githubusercontent.com/The412Banner/winlator-contents/main/linuxfs.json";
-    private static final String BUNDLED_URL = "asset:linuxfs-runtime.tar.zst";
+    private static final String BUNDLED_ARCHIVE = "linuxfs-runtime.tar.zst";
+    private static final String BUNDLED_URL = "asset:" + BUNDLED_ARCHIVE;
     private static final String BUNDLED_MANIFEST = "linuxfs-runtime.json";
 
     private static final String VERSION_FILE = ".version";
@@ -254,7 +255,7 @@ public final class LinuxRuntimeInstaller {
             boolean ok;
             if (BUNDLED_URL.equals(release.url)) {
                 if (listener != null) listener.onProgress(Step.DOWNLOADING, downloading, 0);
-                try (InputStream input = context.getAssets().open("linuxfs-runtime.tar.zst");
+                try (InputStream input = context.getAssets().open(BUNDLED_ARCHIVE);
                      OutputStream output = new FileOutputStream(archive)) {
                     byte[] buffer = new byte[1 << 16];
                     long copied = 0L;
