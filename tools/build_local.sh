@@ -442,7 +442,7 @@ sdk_tool apksigner sign \
     --ks-key-alias testkey --key-pass pass:android \
     --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
     --out "${apk_relative}" "${apk_relative}.aligned"
-rm -f "${apk}.aligned" "${apk}.idsig"
+run_build_image rm -f "${apk_relative}.aligned" "${apk_relative}.idsig"
 
 signature_output=$(sdk_tool apksigner verify --min-sdk-version 21 --verbose --print-certs "${apk_relative}")
 printf '%s\n' "${signature_output}"
