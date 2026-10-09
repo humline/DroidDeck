@@ -128,6 +128,7 @@ jobs:
           TURNIP_BUILDER_COMMIT: ${{ steps.runtime-lock.outputs.turnip_builder_commit }}
           TURNIP_MESA_COMMIT: ${{ steps.runtime-lock.outputs.turnip_mesa_commit }}
           TURNIP_INPUT_SHA256: ${{ steps.turnip.outputs.zip_sha256 }}
+          TURNIP_FALLBACK_SHA256: ${{ steps.runtime-lock.outputs.turnip_fallback_sha256 }}
         run: |
           set -euo pipefail
           SOURCE_COMMIT=$(git -C upstream-linuxfs rev-parse HEAD)
@@ -135,6 +136,7 @@ jobs:
           [[ "$TURNIP_INPUT_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$TURNIP_BUILDER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           [[ "$TURNIP_MESA_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TURNIP_FALLBACK_SHA256" =~ ^[0-9a-f]{64}$ ]]
           mkdir -p out
           export TURNIP_URL="file://$RUNNER_TEMP/turnip.zip"
           upstream-linuxfs/linuxfs/build-base.sh "$RUNNER_TEMP/linuxfs-work" "$PWD/out/linuxfs-runtime.tar.zst"
@@ -149,7 +151,8 @@ jobs:
             --turnip-builder-commit "$TURNIP_BUILDER_COMMIT" \
             --turnip-mesa-commit "$TURNIP_MESA_COMMIT" \
             --turnip-input-sha256 "$TURNIP_INPUT_SHA256" \
-            --turnip-fallback-url "$TURNIP_SOURCE_URL"
+            --turnip-fallback-url "$TURNIP_SOURCE_URL" \
+            --turnip-fallback-sha256 "$TURNIP_FALLBACK_SHA256"
           test -s out/linuxfs-packages.txt
           jq -e '.packageCount > 0 and .fileCount > 0' out/linuxfs-runtime-inventory.json
 

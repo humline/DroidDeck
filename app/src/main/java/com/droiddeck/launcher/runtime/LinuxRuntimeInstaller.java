@@ -120,15 +120,19 @@ public final class LinuxRuntimeInstaller {
                     long size = json.optLong("size", 0L);
                     if (version.isEmpty() || !sha256.matches("(?i)[0-9a-f]{64}") || size <= 0L) {
                         Log.w(TAG, "bundled runtime manifest is missing valid version, SHA-256, or size");
-                        return null;
+                        return fetchCatalogRelease();
                     }
                     return new Release(version, BUNDLED_URL, sha256, size);
                 }
             }
         } catch (Exception e) {
             Log.w(TAG, "bundled runtime manifest: " + e);
-            return null;
+            return fetchCatalogRelease();
         }
+        return fetchCatalogRelease();
+    }
+
+    private static Release fetchCatalogRelease() {
         String body = Downloader.downloadString(CATALOG_URL);
         if (body == null || body.isEmpty()) return null;
         try {
@@ -269,7 +273,7 @@ public final class LinuxRuntimeInstaller {
                         if (listener != null && copied - lastReport > (1 << 20)) {
                             lastReport = copied;
                             listener.onProgress(Step.DOWNLOADING, downloading,
-                                    Math.round(copied * 100f / release.size));
+                                    Math.min(100, Math.round(copied * 100f / release.size)));
                         }
                     }
                     ok = archive.length() == release.size;
