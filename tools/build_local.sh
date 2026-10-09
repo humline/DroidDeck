@@ -316,6 +316,8 @@ if [[ -z "${DROIDDECK_PA13_SOURCE_DIR:-}" ]]; then
     fi
     mkdir -p "${pa_source}"
     tar -xzf "${pa_tarball}" -C "${pa_source}" --strip-components=1
+else
+    pa_source=$(cd "${pa_source}" && pwd)
 fi
 if [[ ! -f "${pa_source}/src/pulse/version.h.in" ]]; then
     echo "PulseAudio 13.0 source not found at ${pa_source}; set DROIDDECK_PA13_SOURCE_DIR." >&2
@@ -496,11 +498,15 @@ if [[ -n "${signing_env}" ]]; then
             # shellcheck disable=SC1090
             . "${signing_env}"
             set +a
+            keystore_mount=()
+            if [[ -n "${RELEASE_KEYSTORE:-}" ]]; then
+                keystore_mount=(-v "${RELEASE_KEYSTORE}:${RELEASE_KEYSTORE}:ro")
+            fi
             "${container_engine}" run --rm --platform linux/amd64 \
                 --user "$(id -u):$(id -g)" \
                 -e HOME=/tmp -e BUILD_TOOLS="/opt/android-sdk/build-tools/${build_tools_version}" \
                 -v "${repo_root}:/src" -v "${signing_env}:${signing_env}:ro" \
-                -v "${RELEASE_KEYSTORE}:${RELEASE_KEYSTORE}:ro" -w /src "${image_name}" \
+                "${keystore_mount[@]}" -w /src "${image_name}" \
                 bash -lc 'set -a; . "$1"; set +a; tools/release/sign-apk.sh "$2" standard "$3"' \
                 bash "${signing_env}" "${apk_relative}" "${apk_relative}.release"
         )
