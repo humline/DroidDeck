@@ -22,16 +22,22 @@ class RuntimeManifestTest(unittest.TestCase):
             with open(inventory, "w", encoding="utf-8") as output:
                 json.dump({
                     "packages": [{"name": "sample", "version": "1.0-1"}],
-                    "files": [{"path": "usr/bin/sample"}],
+                    "files": [
+                        {"path": "usr/bin/sample"},
+                        {"path": "usr/lib/libvulkan_freedreno.so", "type": "file", "sha256": "a" * 64},
+                    ],
                 }, output)
 
             metadata, package_list = MANIFEST.create_outputs(
                 archive,
                 inventory,
                 "0e1a71016d7f1b986bfdc31a7be432b56b7f22fd",
+                "source-build",
+                "93d2ea6927841b042230ed3f841cfc32572a67d9",
+                "9ce7a2ef35ae1ab06e024860a0f247962ab11b95",
+                "b" * 64,
                 "https://example.invalid/turnip.zip",
                 "e567b148a9fc4cacaca2783ff12e2baa9b03e6520be305f8d54edc10455f1e3e",
-                "9ce7a2ef35ae1ab06e024860a0f247962ab11b95",
             )
 
         self.assertEqual(hashlib.sha256(b"runtime-archive").hexdigest(), metadata["sha256"])
@@ -41,7 +47,11 @@ class RuntimeManifestTest(unittest.TestCase):
             metadata["version"],
         )
         self.assertEqual("sample 1.0-1\n", package_list)
-        self.assertEqual("https://example.invalid/turnip.zip", metadata["turnip"]["url"])
+        self.assertEqual("source-build", metadata["turnip"]["buildMode"])
+        self.assertEqual("93d2ea6927841b042230ed3f841cfc32572a67d9", metadata["turnip"]["builderCommit"])
+        self.assertEqual("9ce7a2ef35ae1ab06e024860a0f247962ab11b95", metadata["turnip"]["mesaCommit"])
+        self.assertEqual("a" * 64, metadata["turnip"]["installedIcdSha256"])
+        self.assertEqual("https://example.invalid/turnip.zip", metadata["turnip"]["fallbackRelease"]["url"])
         self.assertEqual("no pinned digest in upstream builder", metadata["inputs"][0]["verification"])
 
     def test_manifest_requires_complete_package_and_file_inventory(self):
@@ -57,9 +67,12 @@ class RuntimeManifestTest(unittest.TestCase):
                     archive,
                     inventory,
                     "0e1a71016d7f1b986bfdc31a7be432b56b7f22fd",
+                    "source-build",
+                    "93d2ea6927841b042230ed3f841cfc32572a67d9",
+                    "9ce7a2ef35ae1ab06e024860a0f247962ab11b95",
+                    "b" * 64,
                     "https://example.invalid/turnip.zip",
                     "e567b148a9fc4cacaca2783ff12e2baa9b03e6520be305f8d54edc10455f1e3e",
-                    "9ce7a2ef35ae1ab06e024860a0f247962ab11b95",
                 )
 
 

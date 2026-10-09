@@ -8,14 +8,26 @@ import os
 import re
 
 
-def create_outputs(archive_path, inventory_path, source_commit, turnip_url,
-                  turnip_sha256, turnip_mesa_commit):
+def create_outputs(archive_path, inventory_path, source_commit, turnip_build_mode,
+                   turnip_builder_commit, turnip_mesa_commit, turnip_input_sha256,
+                   turnip_fallback_url, turnip_fallback_sha256):
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise ValueError("builder source commit must be a full lowercase SHA-1")
-    if not re.fullmatch(r"[0-9a-f]{64}", turnip_sha256):
-        raise ValueError("Turnip SHA-256 must be 64 lowercase hexadecimal characters")
+    if turnip_build_mode not in ("source-build", "developer-release-fallback"):
+        raise ValueError("Turnip build mode must be source-build or developer-release-fallback")
+    if not re.fullmatch(r"[0-9a-f]{40}", turnip_builder_commit):
+        raise ValueError("Turnip builder commit must be a full lowercase SHA-1")
     if not re.fullmatch(r"[0-9a-f]{40}", turnip_mesa_commit):
         raise ValueError("Turnip Mesa commit must be a full lowercase SHA-1")
+    if not re.fullmatch(r"[0-9a-f]{64}", turnip_input_sha256):
+        raise ValueError("Turnip input SHA-256 must be 64 lowercase hexadecimal characters")
+    if not re.fullmatch(r"[0-9a-f]{64}", turnip_fallback_sha256):
+        raise ValueError("Turnip fallback SHA-256 must be 64 lowercase hexadecimal characters")
+    if (
+        turnip_build_mode == "developer-release-fallback"
+        and turnip_input_sha256 != turnip_fallback_sha256
+    ):
+        raise ValueError("fallback Turnip ZIP hash does not match the pinned developer release")
 
     with open(inventory_path, encoding="utf-8") as source:
         inventory = json.load(source)
@@ -30,6 +42,13 @@ def create_outputs(archive_path, inventory_path, source_commit, turnip_url,
             digest.update(block)
             size += len(block)
     archive_sha256 = digest.hexdigest()
+    turnip_file = next(
+        (item for item in inventory["files"]
+         if item.get("path") == "usr/lib/libvulkan_freedreno.so" and item.get("type") == "file"),
+        None,
+    )
+    if not turnip_file or not turnip_file.get("sha256"):
+        raise ValueError("runtime inventory is missing the installed Turnip ICD hash")
     metadata = {
         "version": f"runtime-{archive_sha256[:16]}",
         "builder": "The412Banner/winlator-contents",
@@ -37,9 +56,17 @@ def create_outputs(archive_path, inventory_path, source_commit, turnip_url,
         "sha256": archive_sha256,
         "size": size,
         "turnip": {
-            "url": turnip_url,
-            "sha256": turnip_sha256,
+            "repository": "https://github.com/The412Banner/Banners-Turnip",
+            "buildMode": turnip_build_mode,
+            "builderCommit": turnip_builder_commit,
+            "mesaRepository": "https://gitlab.freedesktop.org/mesa/mesa",
             "mesaCommit": turnip_mesa_commit,
+            "inputZipSha256": turnip_input_sha256,
+            "installedIcdSha256": turnip_file["sha256"],
+            "fallbackRelease": {
+                "url": turnip_fallback_url,
+                "sha256": turnip_fallback_sha256,
+            },
         },
         "archive": {"sha256": archive_sha256, "size": size},
         "inputs": [
@@ -94,17 +121,23 @@ def main():
     parser.add_argument("manifest")
     parser.add_argument("package_list")
     parser.add_argument("--source-commit", required=True)
-    parser.add_argument("--turnip-url", required=True)
-    parser.add_argument("--turnip-sha256", required=True)
+    parser.add_argument("--turnip-build-mode", required=True)
+    parser.add_argument("--turnip-builder-commit", required=True)
     parser.add_argument("--turnip-mesa-commit", required=True)
+    parser.add_argument("--turnip-input-sha256", required=True)
+    parser.add_argument("--turnip-fallback-url", required=True)
+    parser.add_argument("--turnip-fallback-sha256", required=True)
     args = parser.parse_args()
     metadata, package_list = create_outputs(
         args.archive,
         args.inventory,
         args.source_commit,
-        args.turnip_url,
-        args.turnip_sha256,
+        args.turnip_build_mode,
+        args.turnip_builder_commit,
         args.turnip_mesa_commit,
+        args.turnip_input_sha256,
+        args.turnip_fallback_url,
+        args.turnip_fallback_sha256,
     )
     os.makedirs(os.path.dirname(os.path.abspath(args.manifest)), exist_ok=True)
     os.makedirs(os.path.dirname(os.path.abspath(args.package_list)), exist_ok=True)

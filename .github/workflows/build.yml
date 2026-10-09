@@ -35,7 +35,7 @@ jobs:
     name: Build Linux runtime archive
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:
@@ -47,9 +47,18 @@ jobs:
         id: runtime-lock
         run: |
           source tools/linuxfs/runtime-build.env
-          echo "turnip_url=$LINUXFS_TURNIP_URL" >> "$GITHUB_OUTPUT"
-          echo "turnip_sha256=$LINUXFS_TURNIP_SHA256" >> "$GITHUB_OUTPUT"
+          echo "turnip_builder_commit=$LINUXFS_TURNIP_BUILDER_COMMIT" >> "$GITHUB_OUTPUT"
           echo "turnip_mesa_commit=$LINUXFS_TURNIP_MESA_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "turnip_fallback_url=$LINUXFS_TURNIP_FALLBACK_URL" >> "$GITHUB_OUTPUT"
+          echo "turnip_fallback_sha256=$LINUXFS_TURNIP_FALLBACK_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Turnip source builder
+        uses: actions/checkout@v4
+        with:
+          repository: The412Banner/Banners-Turnip
+          ref: 93d2ea6927841b042230ed3f841cfc32572a67d9
+          path: upstream-turnip
+          persist-credentials: false
 
       - name: Check out the pinned runtime builder
         uses: actions/checkout@v4
@@ -62,22 +71,71 @@ jobs:
       - name: Install runtime build tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends curl tar zstd binutils xz-utils unzip python3 proot qemu-user-static
+          sudo apt-get install -y --no-install-recommends curl tar zstd binutils xz-utils unzip python3 python3-pip proot qemu-user-static \
+            ninja-build flex bison cmake glslang-tools pkg-config gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu binutils-aarch64-linux-gnu zip patch
+          python3 -m pip install --break-system-packages \
+            'meson==1.5.2' 'mako==1.3.12' 'pyyaml==6.0.2' 'packaging==24.2'
+
+      - name: Build Turnip from Mesa source
+        id: turnip
+        env:
+          TURNIP_BUILDER_COMMIT: ${{ steps.runtime-lock.outputs.turnip_builder_commit }}
+          TURNIP_MESA_COMMIT: ${{ steps.runtime-lock.outputs.turnip_mesa_commit }}
+          TURNIP_FALLBACK_URL: ${{ steps.runtime-lock.outputs.turnip_fallback_url }}
+          TURNIP_FALLBACK_SHA256: ${{ steps.runtime-lock.outputs.turnip_fallback_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$TURNIP_BUILDER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TURNIP_MESA_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TURNIP_FALLBACK_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(git -C upstream-turnip rev-parse HEAD)" = "$TURNIP_BUILDER_COMMIT"
+          mode=source-build
+          if (
+            cd upstream-turnip
+            export MESA_COMMIT="$TURNIP_MESA_COMMIT"
+            export ZIP_NAME=Turnip-DroidDeck-Linux.zip
+            export META_NAME="Mesa Turnip DroidDeck Linux"
+            export PACKAGE_VERSION=1
+            export VARIANT=regular
+            ./build_turnip_linux.sh
+            python3 .github/scripts/verify_driver_zip.py \
+              --kind linux \
+              --zip "linux_workdir/$ZIP_NAME" \
+              --variant regular \
+              --expect-name "$META_NAME" \
+              --expect-package-version "$PACKAGE_VERSION" \
+              --build-report linux_workdir/build-report.json \
+              --report "$RUNNER_TEMP/turnip-build-verification.json"
+          ); then
+            install -m 644 upstream-turnip/linux_workdir/Turnip-DroidDeck-Linux.zip "$RUNNER_TEMP/turnip.zip"
+          else
+            echo "::warning::Pinned Mesa/Turnip source build failed; using the pinned original Banners-Turnip developer release."
+            mode=developer-release-fallback
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/turnip.zip" "$TURNIP_FALLBACK_URL"
+            echo "$TURNIP_FALLBACK_SHA256  $RUNNER_TEMP/turnip.zip" | sha256sum -c -
+          fi
+          unzip -t "$RUNNER_TEMP/turnip.zip"
+          unzip -Z1 "$RUNNER_TEMP/turnip.zip" | grep -Fxq libvulkan_freedreno.so
+          sha256=$(sha256sum "$RUNNER_TEMP/turnip.zip" | cut -d' ' -f1)
+          echo "build_mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "zip_sha256=$sha256" >> "$GITHUB_OUTPUT"
 
       - name: Build Linux runtime
         env:
-          TURNIP_SOURCE_URL: ${{ steps.runtime-lock.outputs.turnip_url }}
-          TURNIP_SHA256: ${{ steps.runtime-lock.outputs.turnip_sha256 }}
+          TURNIP_SOURCE_URL: ${{ steps.runtime-lock.outputs.turnip_fallback_url }}
+          TURNIP_BUILD_MODE: ${{ steps.turnip.outputs.build_mode }}
+          TURNIP_BUILDER_COMMIT: ${{ steps.runtime-lock.outputs.turnip_builder_commit }}
           TURNIP_MESA_COMMIT: ${{ steps.runtime-lock.outputs.turnip_mesa_commit }}
+          TURNIP_INPUT_SHA256: ${{ steps.turnip.outputs.zip_sha256 }}
         run: |
           set -euo pipefail
           SOURCE_COMMIT=$(git -C upstream-linuxfs rev-parse HEAD)
           [[ "$SOURCE_COMMIT" == 0e1a71016d7f1b986bfdc31a7be432b56b7f22fd ]]
-          [[ "$TURNIP_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$TURNIP_INPUT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$TURNIP_BUILDER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           [[ "$TURNIP_MESA_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           mkdir -p out
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/turnip.zip" "$TURNIP_SOURCE_URL"
-          echo "$TURNIP_SHA256  $RUNNER_TEMP/turnip.zip" | sha256sum -c -
           export TURNIP_URL="file://$RUNNER_TEMP/turnip.zip"
           upstream-linuxfs/linuxfs/build-base.sh "$RUNNER_TEMP/linuxfs-work" "$PWD/out/linuxfs-runtime.tar.zst"
           python3 tools/linuxfs/audit_runtime.py "$RUNNER_TEMP/linuxfs-work/rootfs" out/linuxfs-runtime-inventory.json
@@ -87,9 +145,11 @@ jobs:
             out/linuxfs-runtime.json \
             out/linuxfs-packages.txt \
             --source-commit "$SOURCE_COMMIT" \
-            --turnip-url "$TURNIP_SOURCE_URL" \
-            --turnip-sha256 "$TURNIP_SHA256" \
-            --turnip-mesa-commit "$TURNIP_MESA_COMMIT"
+            --turnip-build-mode "$TURNIP_BUILD_MODE" \
+            --turnip-builder-commit "$TURNIP_BUILDER_COMMIT" \
+            --turnip-mesa-commit "$TURNIP_MESA_COMMIT" \
+            --turnip-input-sha256 "$TURNIP_INPUT_SHA256" \
+            --turnip-fallback-url "$TURNIP_SOURCE_URL"
           test -s out/linuxfs-packages.txt
           jq -e '.packageCount > 0 and .fileCount > 0' out/linuxfs-runtime-inventory.json
 
