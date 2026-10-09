@@ -13,7 +13,7 @@ else
 fi
 sdk_dir=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"${HOME}/Library/Android/sdk"}}
 java_dir=${JAVA_HOME:-"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"}
-image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:24.04-v3}
+image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:24.04-v4}
 container_engine=${DROIDDECK_CONTAINER_ENGINE:-docker}
 build_variant=${DROIDDECK_BUILD_VARIANT:-release}
 case "$build_variant" in
@@ -214,6 +214,17 @@ cached() {
     mv "${out}.part" "${out}"
     echo "${out}"
 }
+
+# The runtime archive and Turnip driver are built locally in the same container image as the
+# native preload libraries, then staged as Gradle assets. Persist sources, package downloads and
+# build intermediates so subsequent local builds can reuse the expensive upstream work.
+runtime_cache="${cache_dir}/linuxfs-runtime"
+mkdir -p "${runtime_cache}"
+"${container_engine}" run --rm --platform linux/amd64 \
+    --user "$(id -u):$(id -g)" \
+    -v "${repo_root}:/src" -v "${runtime_cache}:/runtime-work" \
+    -w /src "${image_name}" \
+    bash tools/linuxfs/build_runtime_local.sh /runtime-work
 
 if [[ -f "${repo_root}/tools/gamescope/release.env" ]]; then
     . "${repo_root}/tools/gamescope/release.env"
