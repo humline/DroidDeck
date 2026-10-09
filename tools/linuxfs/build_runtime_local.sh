@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 work_root=${1:-${DROIDDECK_RUNTIME_WORKDIR:-/runtime-work}}
 output_dir="${repo_root}/app/build/generated/linuxfsRuntime"
 source "${repo_root}/tools/linuxfs/runtime-build.env"
@@ -54,14 +54,14 @@ rm -f "${turnip_build_dir}/linux_workdir/Turnip-DroidDeck-Linux.zip"
 
 echo "Building Linux Turnip from Mesa ${LINUXFS_TURNIP_MESA_COMMIT}..."
 if (
-    cd "${turnip_build_dir}"
-    export MESA_COMMIT="${LINUXFS_TURNIP_MESA_COMMIT}"
-    export ZIP_NAME=Turnip-DroidDeck-Linux.zip
-    export META_NAME="Mesa Turnip DroidDeck Linux"
-    export PACKAGE_VERSION=1
-    export VARIANT=regular
-    "${turnip_repo}/build_turnip_linux.sh"
-    python3 "${turnip_repo}/.github/scripts/verify_driver_zip.py" \
+    cd "${turnip_build_dir}" \
+        && export MESA_COMMIT="${LINUXFS_TURNIP_MESA_COMMIT}" \
+        && export ZIP_NAME=Turnip-DroidDeck-Linux.zip \
+        && export META_NAME="Mesa Turnip DroidDeck Linux" \
+        && export PACKAGE_VERSION=1 \
+        && export VARIANT=regular \
+        && "${turnip_repo}/build_turnip_linux.sh" \
+        && python3 "${turnip_repo}/.github/scripts/verify_driver_zip.py" \
         --kind linux \
         --zip "${turnip_build_dir}/linux_workdir/${ZIP_NAME}" \
         --variant regular \
