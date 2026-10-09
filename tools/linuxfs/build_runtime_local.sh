@@ -80,7 +80,8 @@ else
     echo "Turnip source build/verification failed; trying the pinned developer release." >&2
     turnip_mode=developer-release-fallback
     rm -f "${turnip_zip}.part"
-    curl -fsSL --retry 3 -o "${turnip_zip}.part" "${LINUXFS_TURNIP_FALLBACK_URL}"
+    curl -fsSL --connect-timeout 30 --max-time 600 --retry 3 \
+        -o "${turnip_zip}.part" "${LINUXFS_TURNIP_FALLBACK_URL}"
     printf '%s  %s\n' "${LINUXFS_TURNIP_FALLBACK_SHA256}" "${turnip_zip}.part" | sha256sum -c -
     mv "${turnip_zip}.part" "${turnip_zip}"
 fi
