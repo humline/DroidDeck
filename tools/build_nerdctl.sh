@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+. "${repo_root}/tools/local-build.env"
+image_name=${DROIDDECK_BUILD_IMAGE}
 if ! command -v nerdctl >/dev/null 2>&1; then
     echo "nerdctl is required." >&2
     exit 1
@@ -25,6 +27,5 @@ fi
 destination="${repo_root}/DroidDeck-${build_variant}.apk"
 cp -p "${apk}" "${destination}"
 printf 'APK copied to: %s\n' "${destination}"
-image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v6}
 nerdctl run --rm --platform linux/amd64 -v "${repo_root}:/src:ro" "${image_name}" \
     sha256sum "/src/DroidDeck-${build_variant}.apk"

@@ -11,7 +11,8 @@ if tree_status=$(git -C "${repo_root}" status --porcelain 2>/dev/null); then
 else
     export DROIDDECK_BUILD_TREE_STATE=unknown
 fi
-image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v6}
+. "${repo_root}/tools/local-build.env"
+image_name=${DROIDDECK_BUILD_IMAGE}
 container_engine=${DROIDDECK_CONTAINER_ENGINE:-nerdctl}
 case "${container_engine}" in
     nerdctl|docker) ;;
@@ -394,7 +395,7 @@ apk_relative="app/build/outputs/apk/${build_variant}/app-${build_variant}.apk"
 audio_check="${staging_dir}/audio-check"
 mkdir -p "${audio_check}"
 run_build_image bash -c \
-    'unzip -p "$1" assets/pulseaudio.tzst | zstd -dc | tar -xf - -C "$2"' _ "${apk}" "${audio_check}"
+    'unzip -p "$1" assets/pulseaudio.tzst | zstd -dc | tar -xf - -C "$2"' _ "${apk_relative}" "${audio_check}"
 for audio_file in \
     pactl \
     modules/arm64/module-aaudio-sink.so \
