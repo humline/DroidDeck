@@ -11,7 +11,7 @@ if tree_status=$(git -C "${repo_root}" status --porcelain 2>/dev/null); then
 else
     export DROIDDECK_BUILD_TREE_STATE=unknown
 fi
-image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v5}
+image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v6}
 container_engine=${DROIDDECK_CONTAINER_ENGINE:-nerdctl}
 case "${container_engine}" in
     nerdctl|docker) ;;
@@ -90,9 +90,14 @@ linuxfs_replaced=1
 rm -rf -- "${linuxfs_dir}"
 mkdir -p "${linuxfs_dir}"
 
-echo "Building/updating local build image ${image_name}..."
-"${container_engine}" build --platform linux/amd64 -t "${image_name}" \
-    -f "${repo_root}/tools/local-cross.Dockerfile" "${repo_root}"
+if [[ "${DROIDDECK_REBUILD_IMAGE:-0}" == 1 ]] \
+        || ! "${container_engine}" image inspect "${image_name}" >/dev/null 2>&1; then
+    echo "Building local build image ${image_name}..."
+    "${container_engine}" build --platform linux/amd64 -t "${image_name}" \
+        -f "${repo_root}/tools/local-cross.Dockerfile" "${repo_root}"
+else
+    echo "Using cached build image ${image_name} (set DROIDDECK_REBUILD_IMAGE=1 to rebuild)."
+fi
 
 cache_dir=${DROIDDECK_BUILD_CACHE:-"${HOME}/.cache/droiddeck-build"}
 mkdir -p "${cache_dir}"

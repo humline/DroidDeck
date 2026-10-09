@@ -25,6 +25,6 @@ fi
 destination="${repo_root}/DroidDeck-${build_variant}.apk"
 cp -p "${apk}" "${destination}"
 printf 'APK copied to: %s\n' "${destination}"
-image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v5}
+image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:gradle-8.10.2-v6}
 nerdctl run --rm --platform linux/amd64 -v "${repo_root}:/src:ro" "${image_name}" \
     sha256sum "/src/DroidDeck-${build_variant}.apk"
