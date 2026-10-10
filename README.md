@@ -27,7 +27,7 @@ Join the [DroidDeck Discord](https://discord.gg/JRGAvawjsm) for help, Preview bu
 
 Run `tools/build_nerdctl.sh` with nerdctl/BuildKit, Bash, and standard Unix file/text utilities. Android SDK/NDK, Java, Gradle, Python, download/archive tools and compilers are supplied by the build image; a host SDK or GitHub CLI is not required. `tools/build_local.sh` can also use Docker by setting `DROIDDECK_CONTAINER_ENGINE=docker`; both engines use the same image SDK.
 
-The script builds the image if it is missing; set `DROIDDECK_REBUILD_IMAGE=1` to rebuild it and pick up Dockerfile changes. The image is based on Gradle 8.10.2/JDK 17 and installs Google's pinned command-line tools after SHA-256 verification, accepts SDK licenses, and installs platform 34, build-tools 34.0.0, CMake 3.22.1, and NDK 27.3.13750724. It also contains cross compilers, QEMU/PRoot, and the pinned Turnip build toolchain.
+The script builds the image if it is missing; set `DROIDDECK_REBUILD_IMAGE=1` to rebuild it and pick up Dockerfile changes. The image is based on Gradle 8.10.2/JDK 17 and installs Google's pinned command-line tools after SHA-256 verification, accepts SDK licenses, and installs platform 34, build-tools 34.0.0, CMake 3.22.1, and NDK 27.3.13750724. It also contains cross compilers, QEMU/PRoot, and the pinned Turnip build toolchain: glslang 14.3.0 is compiled from a SHA-256-verified source archive and checked with Mesa's own version parser (the jammy `glslang-tools` package is too old for Mesa's `>= 12.2` requirement), and the g++-12 cross series is selected as `aarch64-linux-gnu-g++` because the jammy default g++ 11 cannot compile the pinned Mesa sources (upstream's turnip builder CI uses ubuntu-24.04's g++ 13). The Turnip driver is therefore built from pinned Mesa source rather than falling back to the prebuilt release.
 
 The build checks out pinned Banners-Turnip and winlator-contents revisions, compiles and verifies the Linux Turnip driver from pinned Mesa source (using a SHA-256-verified original developer release only if the source build fails), builds/audits the Linux runtime, stages its archive, manifest, package list and filesystem inventory under `app/build/generated/linuxfsRuntime`, and assembles/signs the APK. `tools/build_nerdctl.sh` copies the result to `DroidDeck-release.apk` in the project root. Runtime sources/build intermediates are cached under `~/.cache/droiddeck-build` by default; override this with `DROIDDECK_BUILD_CACHE`. Set `DROIDDECK_BUILD_VARIANT=debug` for a debug APK. GitHub Actions no longer builds or transfers the runtime archive; APKs built there without generated runtime assets continue to use the runtime catalog at install time.
 
@@ -40,6 +40,16 @@ The local build verifies the Android command-line tools archive against a pinned
 Runtime trimming can leave files from packages that were removed. The build's library audit may therefore report unresolved shared libraries for such leftovers; these reports should be investigated if they affect files that are meant to be used, but are not by themselves proof of a broken runtime. Tar's “Ignoring unknown extended header keyword” messages concern archive metadata, and a `setlocale` warning means the requested locale is not installed in the build environment. These warnings do not alone indicate that the build failed. Check the final command status and the generated runtime manifest/archive checks when diagnosing a build.
 
 The package/file inventory and SHA-256 checks help identify build inputs and detect accidental changes, but do not establish that upstream binaries are free of malware. In particular, the Arch base image and live package repositories are not authenticated by pinned digests or signatures in this build pipeline.
+
+### Differences from the open-source project
+
+This tree adds a self-contained local build pipeline and supply-chain hardening on top of the open-source project:
+
+- `tools/build_local.sh`, `tools/build_nerdctl.sh`, and `tools/local-cross.Dockerfile` run the whole build in a pinned container image (selected by `tools/local-build.env`); the host needs no SDK, JDK, or compiler installs.
+- The Linux runtime and the Mesa Turnip driver are compiled from pinned sources during the APK build instead of consuming prebuilt artifacts; the SHA-256-verified Turnip developer release is used only when the source build fails. Provenance is recorded under `app/build/generated/linuxfsRuntime` (archive manifest, package list, file inventory) by `tools/linuxfs/`.
+- Build inputs are pinned and verified: the Android SDK command-line tools archive at image build time, glslang 14.3.0 from a source archive, and cached release downloads under checksum-derived names with bounded retries.
+- Flaky networks cannot hang the build: transfers that stall are abandoned and retried (`tools/curl-home/.curlrc`), and Arch package downloads are steered to a mirror that answers when the geo-redirector picks a stalled one.
+- The build checks described above (sensitive-path inventory with the CA truststore exemption, APK/audio/NEEDED checks) run locally and in CI.
 
 ## Limits
 

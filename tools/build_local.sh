@@ -103,10 +103,14 @@ fi
 cache_dir=${DROIDDECK_BUILD_CACHE:-"${HOME}/.cache/droiddeck-build"}
 mkdir -p "${cache_dir}"
 cache_dir=$(cd "${cache_dir}" && pwd)
+# Commands in the build image see the repo only at /src (their working directory); ${cache_dir} and
+# ${staging_dir} are mounted at their host paths. Repo paths handed to run_build_image must be
+# /src-absolute (or /src-relative), never host paths.
 run_build_image() {
     "${container_engine}" run --rm --platform linux/amd64 \
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
+        -e CURL_HOME=/src/tools/curl-home \
         -v "${repo_root}:/src" \
         -v "${cache_dir}:${cache_dir}" \
         -v "${staging_dir}:${staging_dir}" \
@@ -211,8 +215,16 @@ cached() {
         return 0
     fi
     rm -f "${out}.part"
-    run_build_image env out="${out}.part" "$@" >&2
-    run_build_image bash -c 'printf "%s  %s\n" "$1" "$2" | sha256sum -c -' _ "${sha}" "${out}.part" >&2
+    # set -e is suppressed inside a function called from $(...), so failures are checked explicitly
+    # and returned: a bad or missing download must stop the build, not stage a path that is not there.
+    if ! run_build_image env out="${out}.part" "$@" >&2; then
+        echo "download failed: ${name}" >&2
+        return 1
+    fi
+    if ! run_build_image bash -c 'printf "%s  %s\n" "$1" "$2" | sha256sum -c -' _ "${sha}" "${out}.part" >&2; then
+        echo "checksum verification failed: ${name}" >&2
+        return 1
+    fi
     mv "${out}.part" "${out}"
     echo "${out}"
 }
@@ -222,8 +234,29 @@ cached() {
 # build intermediates so subsequent local builds can reuse the expensive upstream work.
 runtime_cache="${cache_dir}/linuxfs-runtime"
 mkdir -p "${runtime_cache}"
+# mirror.archlinuxarm.org georedirects to one mirror that can stall from some networks; packages are
+# then fetched at a crawl and every retry lands on the same host. Point the hostname at a mirror that
+# answers now: the candidate is probed through the steered name (mirrors with strict name-based
+# virtual hosts and mirrors missing a repository are skipped), resolved fresh each build. Package
+# provenance is unchanged: the upstream builders' downloads are live and unpinned either way (see the
+# README).
+arch_mirror_hosts=()
+for candidate in tw.mirror.archlinuxarm.org de.mirror.archlinuxarm.org; do
+    if arch_mirror_ip=$(getent ahostsv4 "${candidate}" | awk 'NR==1{print $1}') \
+            && [[ -n "${arch_mirror_ip}" ]] \
+            && curl -fsSL --max-time 20 \
+                --resolve "mirror.archlinuxarm.org:80:${arch_mirror_ip}" \
+                -o /dev/null "http://mirror.archlinuxarm.org/aarch64/extra/extra.db"; then
+        arch_mirror_hosts=(--add-host "mirror.archlinuxarm.org:${arch_mirror_ip}" \
+            --add-host "fl.us.mirror.archlinuxarm.org:${arch_mirror_ip}")
+        echo "Arch packages come from ${candidate}; mirror.archlinuxarm.org redirects to a stalled mirror from here."
+        break
+    fi
+done
 "${container_engine}" run --rm --platform linux/amd64 \
     --user "$(id -u):$(id -g)" \
+    -e CURL_HOME=/src/tools/curl-home \
+    "${arch_mirror_hosts[@]}" \
     -v "${repo_root}:/src" -v "${runtime_cache}:/runtime-work" \
     -w /src "${image_name}" \
     bash tools/linuxfs/build_runtime_local.sh /runtime-work
@@ -233,7 +266,7 @@ if [[ -f "${repo_root}/tools/gamescope/release.env" ]]; then
     gamescope_archive=$(cached "${GAMESCOPE_SHA256}" gamescope.tzst \
         bash -c 'curl -fsSL --retry 3 -o "$out" "https://github.com/$1/releases/download/$2/$3"' \
         _ "${GAMESCOPE_REPO}" "${GAMESCOPE_TAG}" gamescope.tzst)
-    run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${gamescope_archive}" "${linuxfs_dir}"
+    run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${gamescope_archive}" /src/app/src/main/assets/linuxfs
     test -f "${linuxfs_dir}/usr/local/bin/gamescope"
 fi
 
@@ -242,7 +275,7 @@ if [[ -f "${repo_root}/tools/wlroots/release.env" ]]; then
     wlroots_archive=$(cached "${WLROOTS_SHA256}" wlroots.tzst \
         bash -c 'curl -fsSL --retry 3 -o "$out" "https://github.com/$1/releases/download/$2/$3"' \
         _ "${WLROOTS_REPO}" "${WLROOTS_TAG}" wlroots.tzst)
-    run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${wlroots_archive}" "${linuxfs_dir}"
+    run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${wlroots_archive}" /src/app/src/main/assets/linuxfs
     test -f "${linuxfs_dir}/usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so"
 fi
 
@@ -331,7 +364,7 @@ if [[ ! -f "${pa_source}/src/pulse/version.h.in" ]]; then
 fi
 
 sink_output="${staging_dir}/sink-out"
-run_build_image tools/directaudio/fetch.sh "${repo_root}" "${sink_output}"
+run_build_image tools/directaudio/fetch.sh /src "${sink_output}"
 pa_mount=()
 case "${pa_source}" in
     "${repo_root}"/*|"${staging_dir}"/*) ;;
@@ -352,14 +385,14 @@ if [[ -f "${proot_out}/libproot.so" && -f "${proot_out}/libproot-loader.so" \
         && "$(cat "${proot_out}/.proot-inputs" 2>/dev/null)" = "${proot_inputs}" ]]; then
     echo "proot: sources unchanged, keeping ${proot_out}/libproot.so"
 else
-    run_build_image env NDK="${NDK}" tools/proot/build.sh "${proot_out}"
+    run_build_image env NDK="${NDK}" tools/proot/build.sh /src/app/src/main/jniLibs/arm64-v8a
     echo "${proot_inputs}" > "${proot_out}/.proot-inputs"
 fi
 
 cp -p "${bundle_asset}" "${bundle_backup}"
 bundle_dir="${staging_dir}/pulseaudio-bundle"
 mkdir -p "${bundle_dir}"
-run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ "${bundle_asset}" "${bundle_dir}"
+run_build_image bash -c 'zstd -dc "$1" | tar -xf - -C "$2"' _ /src/app/src/main/assets/pulseaudio.tzst "${bundle_dir}"
 if [[ -e "${bundle_dir}/modules/arm64/module-aaudio-sink.so" \
         || -e "${bundle_dir}/modules/arm64/module-directaudio-native-sink.so" ]]; then
     echo "The committed audio bundle already contains a built ARM64 sink." >&2
