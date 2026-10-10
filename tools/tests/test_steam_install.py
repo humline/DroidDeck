@@ -27,10 +27,18 @@ class SteamInstallTest(unittest.TestCase):
         self.bin.mkdir()
         # Only the network is faked: exercise real manifest parsing, checksums and zip extraction.
         curl = self.bin / 'curl'
+        # Argument-layout agnostic: reads the http URL and the output path wherever the script
+        # puts them, so adding curl flags does not silently turn this fake into a no-op.
         curl.write_text('''#!/bin/bash
 set -eu
-printf '%s\\n' "$2" >> "$TEST_REQUESTS"
-cp "$TEST_CDN/${2##*/}" "$4"
+url= out= prev=
+for arg in "$@"; do
+    if [ "$prev" = "-o" ]; then out=$arg; fi
+    case $arg in http*) url=$arg ;; esac
+    prev=$arg
+done
+printf '%s\\n' "$url" >> "$TEST_REQUESTS"
+cp "$TEST_CDN/${url##*/}" "$out"
 ''')
         curl.chmod(0o755)
         # macOS has shasum; the guest and Linux CI have sha256sum.
